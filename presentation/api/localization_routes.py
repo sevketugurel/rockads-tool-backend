@@ -460,16 +460,40 @@ async def analyze_cultural_fit(
         }
 
         # Prepare analyzer
+        # Gather richer text context if available
+        transcription_text = None
+        try:
+            transcription = await use_cases.localization_service.transcription_repository.get_by_video_id(req.video_id)
+            if transcription and transcription.full_text:
+                transcription_text = transcription.full_text
+        except Exception:
+            pass
+
+        translation_texts = []
+        try:
+            translations = await use_cases.localization_service.get_translations_for_video(req.video_id)
+            for t in translations:
+                if t.full_translated_text:
+                    translation_texts.append(t.full_translated_text)
+        except Exception:
+            pass
+
         analyzer = CulturalAnalysisService()
         results = []
 
-        # Resolve countries
+        # Resolve countries and analyze
         for code in req.country_codes:
             country = await use_cases.country_repository.get_by_country_code(code)
             if not country:
                 results.append({"country_code": code.upper(), "error": "Country not found"})
                 continue
-            result = await analyzer.analyze_for_country(video=video, country=country, video_context=video_context)
+            result = await analyzer.analyze_for_country(
+                video=video,
+                country=country,
+                video_context=video_context,
+                transcription_text=transcription_text,
+                translation_texts=translation_texts,
+            )
             results.append(result)
 
         return {"video_id": req.video_id, "results": results}

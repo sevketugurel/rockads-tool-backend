@@ -557,7 +557,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "localization", "analysis"]
             },
-            "description": "Run cultural analysis for selected countries using Gemini with a lightweight RAG layer. Returns strengths, risks, adaptations, CTA examples, compliance, KPIs per country."
+            "description": "Run cultural analysis for selected countries using Gemini with a lightweight RAG layer. Returns strengths, risks, adaptations, CTA examples, compliance, KPIs, plus percentage scores (cultural_fit, content_suitability, market_potential) and target audience analysis."
           },
           "event": [
             {
