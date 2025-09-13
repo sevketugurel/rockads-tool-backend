@@ -536,7 +536,9 @@ class LocalizationUseCases:
         video_id: int,
         country_code: str,
         force_local_tts: bool = False,
-        music_only_background: bool = False
+        music_only_background: bool = False,
+        split_into_parts: Optional[int] = None,
+        max_part_duration: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Complete video localization with TTS and final video generation."""
         try:
@@ -550,17 +552,52 @@ class LocalizationUseCases:
                 video_id,
                 country_code,
                 force_local_tts=force_local_tts,
-                music_only_background=music_only_background
+                music_only_background=music_only_background,
+                split_into_parts=split_into_parts,
+                max_part_duration=max_part_duration,
             )
             country = await self.country_repository.get_by_id(translation.country_id)
 
-            # Generate final video URL if video was created
+            # Generate final video URL/PATH if video was created
+            import os
             final_video_url = None
+            final_video_path = None
             if translation.final_video_path:
-                # Create a download URL - in production this would be a proper file server URL
-                import os
                 filename = os.path.basename(translation.final_video_path)
                 final_video_url = f"/api/localization/download/{filename}"
+                final_video_path = translation.final_video_path
+            else:
+                # Fallback: scan output directory using either original filename stem or stored file stem
+                try:
+                    from core.config.settings import settings
+                    stems = [
+                        os.path.splitext(video.original_filename or "")[0],
+                        os.path.splitext(video.filename or "")[0],
+                    ]
+                    cc = country.country_code if country else None
+                    out_dir = settings.output_dir
+                    if cc and os.path.isdir(out_dir):
+                        candidates = [
+                            f for f in os.listdir(out_dir)
+                            if any(f.startswith(f"{s}_{cc}_") for s in stems if s) and f.endswith(".mp4")
+                        ]
+                        if candidates:
+                            candidates.sort(key=lambda f: os.path.getmtime(os.path.join(out_dir, f)), reverse=True)
+                            chosen = candidates[0]
+                            final_video_url = f"/api/localization/download/{chosen}"
+                            final_video_path = os.path.join(out_dir, chosen)
+                except Exception:
+                    pass
+
+            # Try to extract multi-part outputs from translation warnings (internal carrier)
+            parts_info = None
+            try:
+                for w in translation.warnings or []:
+                    if isinstance(w, dict) and "parts" in w:
+                        parts_info = w["parts"]
+                        break
+            except Exception:
+                parts_info = None
 
             return {
                 "translation_id": translation.id,
@@ -576,8 +613,10 @@ class LocalizationUseCases:
                 "effectiveness_prediction": translation.effectiveness_prediction,
                 "processing_time": translation.processing_time,
                 "final_video_url": final_video_url,
+                "final_video_path": final_video_path,
                 "has_audio_localization": bool(translation.audio_segments),
                 "video_duration": translation.video_duration,
+                "parts": parts_info,
                 "segments": [
                     {
                         "start_time": seg.start_time,

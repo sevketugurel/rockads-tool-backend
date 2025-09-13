@@ -246,6 +246,7 @@ class LocalizationService:
                     country = await self.country_repository.get_by_id(translation.country_id)
                     # Try to expose downloadable video URL if exists
                     final_video_url = None
+                    final_video_path = None
                     try:
                         # If path was persisted, use it
                         if getattr(translation, "final_video_path", None):
@@ -255,23 +256,28 @@ class LocalizationService:
                             candidate = os.path.join(settings.output_dir, filename)
                             if os.path.exists(candidate):
                                 final_video_url = f"/api/localization/download/{filename}"
+                                final_video_path = candidate
                         else:
                             # Fallback: infer by filename pattern <original_stem>_<CC>_*.mp4
                             video = await self.video_repository.get_by_id(job.video_id)
                             if video and country and country.country_code:
                                 from core.config.settings import settings
-                                stem = os.path.splitext(video.original_filename)[0]
+                                stems = [
+                                    os.path.splitext(video.original_filename or "")[0],
+                                    os.path.splitext(video.filename or "")[0],
+                                ]
                                 cc = country.country_code
                                 out_dir = settings.output_dir
                                 if os.path.isdir(out_dir):
-                                    matches = [
-                                        f for f in os.listdir(out_dir)
-                                        if f.startswith(f"{stem}_{cc}_") and f.endswith(".mp4")
-                                    ]
+                                    matches = [f for f in os.listdir(out_dir) if f.endswith(".mp4") and any(
+                                        f.startswith(f"{s}_{cc}_") for s in stems if s
+                                    )]
                                     if matches:
                                         # pick most recent
                                         matches.sort(key=lambda f: os.path.getmtime(os.path.join(out_dir, f)), reverse=True)
-                                        final_video_url = f"/api/localization/download/{matches[0]}"
+                                        choice = matches[0]
+                                        final_video_url = f"/api/localization/download/{choice}"
+                                        final_video_path = os.path.join(out_dir, choice)
                     except Exception:
                         pass
                     if translation.status == TranslationStatus.COMPLETED:
@@ -286,7 +292,8 @@ class LocalizationService:
                         "confidence": translation.overall_confidence,
                         "cultural_score": translation.cultural_appropriateness_score,
                         "effectiveness": translation.effectiveness_prediction,
-                        "final_video_url": final_video_url
+                        "final_video_url": final_video_url,
+                        "final_video_path": final_video_path
                     })
 
         return {
@@ -365,7 +372,9 @@ class LocalizationService:
         video_id: int,
         country_code: str,
         force_local_tts: bool = False,
-        music_only_background: bool = False
+        music_only_background: bool = False,
+        split_into_parts: Optional[int] = None,
+        max_part_duration: Optional[float] = None
     ) -> Translation:
         """Simplified single-shot localization: video -> country-specific translation.
 
@@ -400,19 +409,102 @@ class LocalizationService:
         )
 
         # Process the translation directly (video-only context)
-        # Use the standard single-translation pipeline so that the Translation
-        # row is created/updated in the DB and we return a persisted entity with id.
-        translation = await self._process_single_translation(
-            video,
-            transcription,
+        # If no splitting requested, run standard direct pipeline
+        if not split_into_parts and not max_part_duration:
+            translation = await self._process_single_translation(
+                video,
+                transcription,
+                country,
+                job_stub,
+                direct_mode=True,
+                force_local_tts=force_local_tts,
+                music_only_background=music_only_background,
+            )
+            return translation
+
+        # SPLIT MODE: First, get segments without TTS
+        base_translation = await self.translation_service.direct_localize_video(  # type: ignore
+            video.file_path,
             country,
-            job_stub,
-            direct_mode=True,
-            force_local_tts=force_local_tts,
+            force_local_tts=False,
             music_only_background=music_only_background,
+            skip_tts=True,
         )
 
-        return translation
+        segments = base_translation.segments or []
+        if not segments:
+            return base_translation
+
+        # Compute split
+        parts: List[List] = []
+        if max_part_duration and max_part_duration > 0:
+            current = []
+            acc = 0.0
+            for seg in segments:
+                dur = float(seg.end_time) - float(seg.start_time)
+                if current and acc + dur > max_part_duration:
+                    parts.append(current)
+                    current = []
+                    acc = 0.0
+                current.append(seg)
+                acc += dur
+            if current:
+                parts.append(current)
+        elif split_into_parts and split_into_parts > 1:
+            size = max(1, int(round(len(segments) / split_into_parts)))
+            for i in range(0, len(segments), size):
+                parts.append(segments[i:i+size])
+        else:
+            parts = [segments]
+
+        # Render each part as separate video
+        rendered_paths = []
+        rendered_urls = []
+        from core.config.settings import settings
+        for idx, part in enumerate(parts, start=1):
+            try:
+                part_translation = await self.translation_service.direct_localize_video(  # type: ignore
+                    video.file_path,
+                    country,
+                    force_local_tts=force_local_tts,
+                    music_only_background=music_only_background,
+                    precomputed_segments=part,
+                    precomputed_duration=base_translation.video_duration,
+                    output_suffix=f"part{idx}",
+                )
+                if part_translation.final_video_path:
+                    import os
+                    filename = os.path.basename(part_translation.final_video_path)
+                    rendered_paths.append(part_translation.final_video_path)
+                    rendered_urls.append(f"/api/localization/download/{filename}")
+            except Exception as e:
+                logger.error(f"Failed to render part {idx}: {e}")
+
+        # Update base translation to carry first part path and store auxiliary info
+        if rendered_paths:
+            base_translation.final_video_path = rendered_paths[0]
+        # Store parts info in warnings or extra (no dedicated field in entity)
+        base_translation.warnings = base_translation.warnings or []
+        base_translation.warnings.append(
+            {
+                "parts": [
+                    {"index": i+1, "final_video_url": rendered_urls[i], "final_video_path": rendered_paths[i]}
+                    for i in range(len(rendered_paths))
+                ]
+            }
+        )
+
+        # Persist/update translation record
+        base_translation.country_id = country.id
+        existing = await self.translation_repository.get_by_video_and_country(video.id, country.id)
+        if existing:
+            base_translation.id = existing.id
+            base_translation.status = existing.status
+            await self.translation_repository.update(base_translation)
+            return await self.translation_repository.get_by_id(existing.id)
+        else:
+            created = await self.translation_repository.create(base_translation)
+            return created
 
     async def _ensure_transcribed(self, video: Video) -> Transcription:
         """Ensure video is transcribed, create transcription if needed"""

@@ -255,7 +255,11 @@ class GeminiTranslationService(TranslationService):
         video_path: str,
         target_country: Country,
         force_local_tts: bool = False,
-        music_only_background: bool = False
+        music_only_background: bool = False,
+        skip_tts: bool = False,
+        precomputed_segments: Optional[List[TranslationSegment]] = None,
+        precomputed_duration: Optional[float] = None,
+        output_suffix: Optional[str] = None,
     ) -> Translation:
         """
         Complete video localization: video → translation → TTS → final video with new audio.
@@ -277,17 +281,18 @@ class GeminiTranslationService(TranslationService):
         try:
             logger.info(f"Starting complete video localization for {target_country.country_name}")
 
-            # Step 1: Upload and analyze video
-            video_file = genai.upload_file(path=video_path)
-            while video_file.state.name == "PROCESSING":
-                await asyncio.sleep(2)
-                video_file = genai.get_file(video_file.name)
-            if video_file.state.name == "FAILED":
-                raise Exception(f"Video processing failed: {video_file.state}")
+            if precomputed_segments is None:
+                # Step 1: Upload and analyze video
+                video_file = genai.upload_file(path=video_path)
+                while video_file.state.name == "PROCESSING":
+                    await asyncio.sleep(2)
+                    video_file = genai.get_file(video_file.name)
+                if video_file.state.name == "FAILED":
+                    raise Exception(f"Video processing failed: {video_file.state}")
 
-            # Step 2: Generate translation with precise timing
-            translation.status = TranslationStatus.TRANSLATING
-            prompt = f"""
+                # Step 2: Generate translation with precise timing
+                translation.status = TranslationStatus.TRANSLATING
+                prompt = f"""
             You are a senior localization expert for advertising videos.
             Watch and listen to this video and produce a localized script for {target_country.country_name}
             in {target_country.language_name}. Focus on preserving ADVERTISING INTENT and scene timing.
@@ -337,31 +342,45 @@ class GeminiTranslationService(TranslationService):
             }}
             """
 
-            await asyncio.sleep(2)
-            response = self.model.generate_content([video_file, prompt])
+                await asyncio.sleep(2)
+                response = self.model.generate_content([video_file, prompt])
 
-            if not response.text:
-                raise Exception("No response generated from Gemini")
+                if not response.text:
+                    raise Exception("No response generated from Gemini")
 
-            parsed = self._parse_translation_response(response.text, [])
+                parsed = self._parse_translation_response(response.text, [])
 
-            translation.segments = parsed["segments"]
-            translation.full_translated_text = parsed["full_text"]
-            translation.cultural_adaptation = parsed["cultural_adaptation"]
-            translation.advertising_context = parsed.get("advertising_context", {})
-            translation.overall_confidence = parsed["confidence"]
+                translation.segments = parsed["segments"]
+                translation.full_translated_text = parsed["full_text"]
+                translation.cultural_adaptation = parsed["cultural_adaptation"]
+                translation.advertising_context = parsed.get("advertising_context", {})
+                translation.overall_confidence = parsed["confidence"]
 
-            # Get video duration for processing
-            try:
-                from moviepy.editor import VideoFileClip
-                with VideoFileClip(video_path) as video_clip:
-                    translation.video_duration = video_clip.duration
-            except Exception as e:
-                logger.warning(f"Could not get video duration: {str(e)}")
-                translation.video_duration = 30.0  # Default fallback
+                # Get video duration for processing
+                try:
+                    from moviepy.editor import VideoFileClip
+                    with VideoFileClip(video_path) as video_clip:
+                        translation.video_duration = video_clip.duration
+                except Exception as e:
+                    logger.warning(f"Could not get video duration: {str(e)}")
+                    translation.video_duration = 30.0  # Default fallback
 
-            # Cleanup Gemini resources
-            genai.delete_file(video_file.name)
+                # Cleanup Gemini resources
+                genai.delete_file(video_file.name)
+            else:
+                translation.status = TranslationStatus.TRANSLATING
+                translation.segments = precomputed_segments
+                translation.video_duration = precomputed_duration
+                translation.full_translated_text = (
+                    "\n".join([seg.translated_text for seg in (precomputed_segments or [])])
+                    if precomputed_segments
+                    else None
+                )
+
+            if skip_tts:
+                translation.status = TranslationStatus.COMPLETED
+                translation.processing_time = time.time() - start_time
+                return translation
 
             # Step 3: Generate speech with ElevenLabs if available
             # TTS generation (with optional force-local fallback)
@@ -420,7 +439,8 @@ class GeminiTranslationService(TranslationService):
                     # Generate output filename
                     from pathlib import Path
                     original_filename = Path(video_path).stem
-                    output_filename = f"{original_filename}_{target_country.country_code}_{session_id}.mp4"
+                    suffix = f"_{output_suffix}" if output_suffix else ""
+                    output_filename = f"{original_filename}_{target_country.country_code}{suffix}_{session_id}.mp4"
                     final_video_path = self.video_service.output_dir / output_filename
 
                     logger.info("Creating final video with synchronized audio...")

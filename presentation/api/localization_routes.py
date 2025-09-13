@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any, Optional, Union
@@ -77,8 +77,10 @@ class TranslationResult(BaseModel):
     processing_time: Optional[float] = None
     warnings: List[str] = []
     final_video_url: Optional[str] = None  # URL to download final localized video
+    final_video_path: Optional[str] = None  # Absolute or relative path on server
     has_audio_localization: bool = False  # Whether TTS was generated
     video_duration: Optional[float] = None
+    parts: Optional[List[Dict[str, Any]]] = None  # Multi-part outputs
 
 
 class DirectLocalizationRequest(BaseModel):
@@ -89,6 +91,14 @@ class DirectLocalizationRequest(BaseModel):
     music_only_background: bool = Field(
         False,
         description="Try to remove original vocals and keep only background music under the new voice"
+    )
+    split_into_parts: Optional[int] = Field(
+        None,
+        description="Split output into this many parts (approximate)"
+    )
+    max_part_duration: Optional[float] = Field(
+        None,
+        description="Target maximum seconds per part; segments are grouped by cumulative duration"
     )
 
 
@@ -421,7 +431,8 @@ async def localization_health_check():
 @router.post("/direct", response_model=TranslationResult)
 async def direct_localize(
     request: DirectLocalizationRequest,
-    session: AsyncSession = Depends(get_async_db)
+    session: AsyncSession = Depends(get_async_db),
+    http_request: Request = None,
 ):
     """
     Complete video localization with TTS and final video generation.
@@ -440,8 +451,21 @@ async def direct_localize(
             request.video_id,
             request.country_code,
             force_local_tts=request.use_local_tts,
-            music_only_background=request.music_only_background
+            music_only_background=request.music_only_background,
+            split_into_parts=request.split_into_parts,
+            max_part_duration=request.max_part_duration
         )
+        # Convert relative download URL to absolute for frontend convenience
+        try:
+            base = str(http_request.base_url).rstrip('/') if http_request else ''
+            if result.get("final_video_url") and base and result["final_video_url"].startswith("/"):
+                result["final_video_url"] = f"{base}{result['final_video_url']}"
+            if result.get("parts") and isinstance(result["parts"], list) and base:
+                for p in result["parts"]:
+                    if isinstance(p, dict) and p.get("final_video_url", "").startswith("/"):
+                        p["final_video_url"] = f"{base}{p['final_video_url']}"
+        except Exception:
+            pass
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
