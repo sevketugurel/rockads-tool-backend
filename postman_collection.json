@@ -1,0 +1,480 @@
+{
+  "info": {
+    "name": "Video Localization API",
+    "description": "Complete API for video upload, transcription, and localization using Gemini AI",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Status",
+      "item": [
+        {
+          "name": "API Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Check if the main API is running"
+          }
+        },
+        {
+          "name": "Localization Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "health"]
+            },
+            "description": "Check if the localization service is running"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Video Management",
+      "item": [
+        {
+          "name": "Upload Video",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "Select a video file to upload"
+                },
+                {
+                  "key": "description",
+                  "value": "Test advertisement video for localization",
+                  "type": "text",
+                  "description": "Optional description for the video"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/videos/upload",
+              "host": ["{{base_url}}"],
+              "path": ["api", "videos", "upload"]
+            },
+            "description": "Upload a video file for processing. Supports MP4, AVI, MOV, MKV, WMV formats. Maximum size: 500MB."
+          }
+        },
+        {
+          "name": "Get All Videos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/videos/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "videos", ""]
+            },
+            "description": "Retrieve all uploaded videos"
+          }
+        },
+        {
+          "name": "Get Video by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/videos/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "videos", "1"]
+            },
+            "description": "Get a specific video by ID. Replace '1' with the actual video ID."
+          }
+        },
+        {
+          "name": "Delete Video",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/videos/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "videos", "1"]
+            },
+            "description": "Delete a video and all associated data. Replace '1' with the actual video ID."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transcription",
+      "item": [
+        {
+          "name": "Transcribe Video",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"language_hint\": \"en\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/videos/1/transcribe",
+              "host": ["{{base_url}}"],
+              "path": ["api", "videos", "1", "transcribe"]
+            },
+            "description": "Start transcription process for a video. Language hint is optional (en, es, tr, de, fr, etc.)"
+          }
+        },
+        {
+          "name": "Get Video Transcription",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/videos/1/transcription",
+              "host": ["{{base_url}}"],
+              "path": ["api", "videos", "1", "transcription"]
+            },
+            "description": "Get the transcription for a video. Replace '1' with the actual video ID."
+          }
+        },
+        {
+          "name": "Get Video Processing Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/videos/1/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "videos", "1", "status"]
+            },
+            "description": "Get the current processing status of a video including transcription progress."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Localization Setup",
+      "item": [
+        {
+          "name": "Get Available Countries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/countries?group_by_language=false",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "countries"],
+              "query": [
+                {
+                  "key": "group_by_language",
+                  "value": "false",
+                  "description": "Whether to group countries by language"
+                }
+              ]
+            },
+            "description": "Get list of available countries for localization with cultural context information"
+          }
+        },
+        {
+          "name": "Get Countries Grouped by Language",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/countries?group_by_language=true",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "countries"],
+              "query": [
+                {
+                  "key": "group_by_language",
+                  "value": "true",
+                  "description": "Group countries by language"
+                }
+              ]
+            },
+            "description": "Get countries organized by language (e.g., US English, UK English, Australian English)"
+          }
+        },
+        {
+          "name": "Get Language Groups",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/languages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "languages"]
+            },
+            "description": "Get countries grouped by language for UI selection"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Localization Jobs",
+      "item": [
+        {
+          "name": "Create Localization Job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"video_id\": 1,\n  \"target_countries\": [\"US\", \"GB\", \"AU\"],\n  \"user_id\": null,\n  \"preferences\": {\n    \"preserve_timing\": true,\n    \"adjust_for_culture\": true,\n    \"voice_tone\": \"professional\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/localization/jobs",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "jobs"]
+            },
+            "description": "Create a new localization job for multiple target countries"
+          }
+        },
+        {
+          "name": "Start Localization Job",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/jobs/1/start",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "jobs", "1", "start"]
+            },
+            "description": "Start processing a localization job in background. Replace '1' with the actual job ID."
+          }
+        },
+        {
+          "name": "Get Localization Job Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/jobs/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "jobs", "1"]
+            },
+            "description": "Get detailed status and progress of a localization job. Replace '1' with the actual job ID."
+          }
+        },
+        {
+          "name": "Get Job Translations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/jobs/1/translations",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "jobs", "1", "translations"]
+            },
+            "description": "Get all translations for a specific localization job. Replace '1' with the actual job ID."
+          }
+        },
+        {
+          "name": "Cancel Localization Job",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/jobs/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "jobs", "1"]
+            },
+            "description": "Cancel a running localization job. Replace '1' with the actual job ID."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Translations",
+      "item": [
+        {
+          "name": "Get Translation Result",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/translations/1?include_analysis=false",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "translations", "1"],
+              "query": [
+                {
+                  "key": "include_analysis",
+                  "value": "false",
+                  "description": "Include detailed video and cultural analysis"
+                }
+              ]
+            },
+            "description": "Get a specific translation result. Replace '1' with the actual translation ID."
+          }
+        },
+        {
+          "name": "Get Translation with Analysis",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/translations/1?include_analysis=true",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "translations", "1"],
+              "query": [
+                {
+                  "key": "include_analysis",
+                  "value": "true",
+                  "description": "Include detailed video and cultural analysis"
+                }
+              ]
+            },
+            "description": "Get translation result with detailed cultural and video analysis"
+          }
+        },
+        {
+          "name": "Retry Failed Translation",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/translations/1/retry",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "translations", "1", "retry"]
+            },
+            "description": "Retry a failed translation. Replace '1' with the actual translation ID."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Video Localizations",
+      "item": [
+        {
+          "name": "Get Video Localizations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/videos/1/localizations",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "videos", "1", "localizations"]
+            },
+            "description": "Get all localization results for a specific video. Replace '1' with the actual video ID."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Get Localization Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/analytics/summary",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "analytics", "summary"]
+            },
+            "description": "Get summary analytics for all localization jobs"
+          }
+        },
+        {
+          "name": "Get Analytics by Video",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/analytics/summary?video_id=1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "analytics", "summary"],
+              "query": [
+                {
+                  "key": "video_id",
+                  "value": "1",
+                  "description": "Filter by specific video ID"
+                }
+              ]
+            },
+            "description": "Get analytics filtered by specific video"
+          }
+        },
+        {
+          "name": "Get Analytics by Country",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/analytics/summary?country_code=US",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "analytics", "summary"],
+              "query": [
+                {
+                  "key": "country_code",
+                  "value": "US",
+                  "description": "Filter by country code"
+                }
+              ]
+            },
+            "description": "Get analytics filtered by specific country"
+          }
+        },
+        {
+          "name": "Get Analytics by Date Range",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/analytics/summary?date_from=2024-01-01T00:00:00Z&date_to=2024-12-31T23:59:59Z",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "analytics", "summary"],
+              "query": [
+                {
+                  "key": "date_from",
+                  "value": "2024-01-01T00:00:00Z",
+                  "description": "Filter from date (ISO format)"
+                },
+                {
+                  "key": "date_to",
+                  "value": "2024-12-31T23:59:59Z",
+                  "description": "Filter to date (ISO format)"
+                }
+              ]
+            },
+            "description": "Get analytics for a specific date range"
+          }
+        }
+      ]
+    }
+  ]
+}

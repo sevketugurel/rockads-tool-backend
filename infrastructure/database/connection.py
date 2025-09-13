@@ -41,3 +41,14 @@ def get_db():
 async def create_tables():
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        # Ensure new columns exist for backward compatibility (SQLite lacks migrations)
+        # Add target_countries to localization_jobs if missing
+        try:
+            result = await conn.exec_driver_sql("PRAGMA table_info('localization_jobs');")
+            cols = [row[1] for row in result.fetchall()]
+            if 'target_countries' not in cols:
+                await conn.exec_driver_sql("ALTER TABLE localization_jobs ADD COLUMN target_countries JSON;")
+        except Exception:
+            # Non-critical: skip if fails
+            pass
