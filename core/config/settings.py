@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # ElevenLabs settings (for future use)
     elevenlabs_api_key: str = "your-elevenlabs-api-key"
-    elevenlabs_voice_id: str = "default-voice-id"
+    elevenlabs_voice_id: str = "pNInz6obpgDQGcFmaJgB"  # Adam voice - ElevenLabs default
 
     class Config:
         env_file = ".env"

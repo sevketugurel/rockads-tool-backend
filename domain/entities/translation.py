@@ -9,6 +9,8 @@ class TranslationStatus(str, Enum):
     ANALYZING_CONTEXT = "analyzing_context"
     TRANSLATING = "translating"
     CULTURAL_ADAPTATION = "cultural_adaptation"
+    GENERATING_AUDIO = "generating_audio"
+    PROCESSING_VIDEO = "processing_video"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -86,6 +88,12 @@ class Translation(BaseModel):
     # Error handling
     error_message: Optional[str] = None
     warnings: List[str] = []
+
+    # Video and audio processing
+    final_video_path: Optional[str] = None  # Path to final localized video
+    audio_segments: Optional[List[Dict[str, Any]]] = None  # Audio segment info
+    video_duration: Optional[float] = None  # Original video duration
+    tts_voice_id: Optional[str] = None  # ElevenLabs voice used
 
     # Metadata
     created_at: Optional[datetime] = None

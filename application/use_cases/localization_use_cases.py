@@ -258,6 +258,37 @@ class LocalizationUseCases:
             # Get country information
             country = await self.country_repository.get_by_id(translation.country_id)
 
+            # Try to construct downloadable video URL if available
+            final_video_url = None
+            try:
+                # Use persisted path if present
+                if getattr(translation, "final_video_path", None):
+                    import os
+                    from core.config.settings import settings
+                    filename = os.path.basename(translation.final_video_path)
+                    candidate = os.path.join(settings.output_dir, filename)
+                    if os.path.exists(candidate):
+                        final_video_url = f"/api/localization/download/{filename}"
+                else:
+                    # Infer by scanning output dir using naming convention
+                    video = await self.video_repository.get_by_id(translation.video_id)
+                    if video and country:
+                        import os
+                        from core.config.settings import settings
+                        stem = os.path.splitext(video.original_filename)[0]
+                        cc = country.country_code
+                        out_dir = settings.output_dir
+                        if os.path.isdir(out_dir):
+                            matches = [
+                                f for f in os.listdir(out_dir)
+                                if f.startswith(f"{stem}_{cc}_") and f.endswith(".mp4")
+                            ]
+                            if matches:
+                                matches.sort(key=lambda f: os.path.getmtime(os.path.join(out_dir, f)), reverse=True)
+                                final_video_url = f"/api/localization/download/{matches[0]}"
+            except Exception:
+                pass
+
             result = {
                 "translation_id": translation.id,
                 "status": translation.status,
@@ -271,6 +302,7 @@ class LocalizationUseCases:
                 "cultural_appropriateness": translation.cultural_appropriateness_score,
                 "effectiveness_prediction": translation.effectiveness_prediction,
                 "processing_time": translation.processing_time,
+                "final_video_url": final_video_url,
                 "segments": [
                     {
                         "start_time": seg.start_time,
@@ -412,7 +444,7 @@ class LocalizationUseCases:
             if not job:
                 raise ValueError("Job not found")
 
-            if job.status in ["completed", "failed"]:
+            if job.status in ["completed", "failed", "cancelled"]:
                 raise ValueError(f"Cannot cancel job in {job.status} status")
 
             # Update job status to cancelled
@@ -498,3 +530,71 @@ class LocalizationUseCases:
         except Exception as e:
             logger.warning(f"Failed to calculate quality metrics: {str(e)}")
             return {}
+
+    async def direct_localize_video(
+        self,
+        video_id: int,
+        country_code: str,
+        force_local_tts: bool = False,
+        music_only_background: bool = False
+    ) -> Dict[str, Any]:
+        """Complete video localization with TTS and final video generation."""
+        try:
+            # Get video details
+            video = await self.video_repository.get_by_id(video_id)
+            if not video:
+                raise ValueError("Video not found")
+
+            # Perform complete localization
+            translation = await self.localization_service.direct_localize(
+                video_id,
+                country_code,
+                force_local_tts=force_local_tts,
+                music_only_background=music_only_background
+            )
+            country = await self.country_repository.get_by_id(translation.country_id)
+
+            # Generate final video URL if video was created
+            final_video_url = None
+            if translation.final_video_path:
+                # Create a download URL - in production this would be a proper file server URL
+                import os
+                filename = os.path.basename(translation.final_video_path)
+                final_video_url = f"/api/localization/download/{filename}"
+
+            return {
+                "translation_id": translation.id,
+                "status": translation.status,
+                "target_country": {
+                    "code": country.country_code if country else None,
+                    "name": country.country_name if country else None,
+                    "language": country.language_name if country else None
+                },
+                "translated_text": translation.full_translated_text,
+                "confidence_score": translation.overall_confidence,
+                "cultural_appropriateness": translation.cultural_appropriateness_score,
+                "effectiveness_prediction": translation.effectiveness_prediction,
+                "processing_time": translation.processing_time,
+                "final_video_url": final_video_url,
+                "has_audio_localization": bool(translation.audio_segments),
+                "video_duration": translation.video_duration,
+                "segments": [
+                    {
+                        "start_time": seg.start_time,
+                        "end_time": seg.end_time,
+                        "original_text": seg.original_text,
+                        "translated_text": seg.translated_text,
+                        "confidence": seg.confidence_score,
+                        "cultural_adaptations": seg.cultural_adaptations
+                    }
+                    for seg in (translation.segments or [])
+                ],
+                "warnings": translation.warnings or [],
+                "audio_localization_info": {
+                    "tts_voice_used": translation.tts_voice_id,
+                    "segments_generated": len(translation.audio_segments) if translation.audio_segments else 0
+                } if translation.audio_segments else None
+            }
+        except Exception as e:
+            logger.error(f"Direct localization failed: {str(e)}")
+            raise

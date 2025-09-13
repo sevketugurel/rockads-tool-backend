@@ -85,14 +85,17 @@ class TranslationRepositoryImpl(TranslationRepository):
         """Get translation for specific video and country combination"""
         try:
             result = await self.db.execute(
-                select(TranslationModel).where(
+                select(TranslationModel)
+                .where(
                     and_(
                         TranslationModel.video_id == video_id,
                         TranslationModel.country_id == country_id
                     )
                 )
+                .order_by(TranslationModel.updated_at.desc(), TranslationModel.id.desc())
+                .limit(1)
             )
-            db_translation = result.scalar_one_or_none()
+            db_translation = result.scalars().first()
             return self._to_entity(db_translation) if db_translation else None
         except SQLAlchemyError as e:
             logger.error(f"Error getting translation for video {video_id} and country {country_id}: {str(e)}")

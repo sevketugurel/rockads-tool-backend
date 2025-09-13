@@ -52,3 +52,11 @@ async def create_tables():
         except Exception:
             # Non-critical: skip if fails
             pass
+
+        # Helpful index to reduce duplicates and speed lookups
+        try:
+            await conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_translations_video_country ON translations (video_id, country_id);"
+            )
+        except Exception:
+            pass

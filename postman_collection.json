@@ -9,6 +9,21 @@
       "key": "base_url",
       "value": "http://localhost:8000",
       "type": "string"
+    },
+    {
+      "key": "video_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "job_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "translation_id",
+      "value": "1",
+      "type": "string"
     }
   ],
   "item": [
@@ -95,11 +110,11 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/videos/1",
+              "raw": "{{base_url}}/api/videos/{{video_id}}",
               "host": ["{{base_url}}"],
-              "path": ["api", "videos", "1"]
+              "path": ["api", "videos", "{{video_id}}"]
             },
-            "description": "Get a specific video by ID. Replace '1' with the actual video ID."
+            "description": "Get a specific video by ID. Update the video_id variable with the actual video ID."
           }
         },
         {
@@ -108,11 +123,11 @@
             "method": "DELETE",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/videos/1",
+              "raw": "{{base_url}}/api/videos/{{video_id}}",
               "host": ["{{base_url}}"],
-              "path": ["api", "videos", "1"]
+              "path": ["api", "videos", "{{video_id}}"]
             },
-            "description": "Delete a video and all associated data. Replace '1' with the actual video ID."
+            "description": "Delete a video and all associated data. Update the video_id variable with the actual video ID."
           }
         }
       ]
@@ -140,9 +155,9 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/videos/1/transcribe",
+              "raw": "{{base_url}}/api/videos/{{video_id}}/transcribe",
               "host": ["{{base_url}}"],
-              "path": ["api", "videos", "1", "transcribe"]
+              "path": ["api", "videos", "{{video_id}}", "transcribe"]
             },
             "description": "Start transcription process for a video. Language hint is optional (en, es, tr, de, fr, etc.)"
           }
@@ -153,11 +168,11 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/videos/1/transcription",
+              "raw": "{{base_url}}/api/videos/{{video_id}}/transcription",
               "host": ["{{base_url}}"],
-              "path": ["api", "videos", "1", "transcription"]
+              "path": ["api", "videos", "{{video_id}}", "transcription"]
             },
-            "description": "Get the transcription for a video. Replace '1' with the actual video ID."
+            "description": "Get the transcription for a video. Update the video_id variable with the actual video ID."
           }
         },
         {
@@ -166,9 +181,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/videos/1/status",
+              "raw": "{{base_url}}/api/videos/{{video_id}}/status",
               "host": ["{{base_url}}"],
-              "path": ["api", "videos", "1", "status"]
+              "path": ["api", "videos", "{{video_id}}", "status"]
             },
             "description": "Get the current processing status of a video including transcription progress."
           }
@@ -248,7 +263,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"video_id\": 1,\n  \"target_countries\": [\"US\", \"GB\", \"AU\"],\n  \"user_id\": null,\n  \"preferences\": {\n    \"preserve_timing\": true,\n    \"adjust_for_culture\": true,\n    \"voice_tone\": \"professional\"\n  }\n}",
+              "raw": "{\n  \"video_id\": {{video_id}},\n  \"target_countries\": [\"US\", \"GB\", \"AU\"],\n  \"user_id\": null,\n  \"preferences\": {\n    \"analysis_depth\": \"comprehensive\",\n    \"cultural_sensitivity\": \"high\",\n    \"brand_consistency\": \"strict\",\n    \"preserve_brand_elements\": true,\n    \"adapt_for_culture\": true,\n    \"maintain_video_timing\": true\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -269,11 +284,11 @@
             "method": "POST",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/localization/jobs/1/start",
+              "raw": "{{base_url}}/api/localization/jobs/{{job_id}}/start",
               "host": ["{{base_url}}"],
-              "path": ["api", "localization", "jobs", "1", "start"]
+              "path": ["api", "localization", "jobs", "{{job_id}}", "start"]
             },
-            "description": "Start processing a localization job in background. Replace '1' with the actual job ID."
+            "description": "Start processing a localization job in background. Update the job_id variable with the actual job ID."
           }
         },
         {
@@ -282,11 +297,11 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/localization/jobs/1",
+              "raw": "{{base_url}}/api/localization/jobs/{{job_id}}",
               "host": ["{{base_url}}"],
-              "path": ["api", "localization", "jobs", "1"]
+              "path": ["api", "localization", "jobs", "{{job_id}}"]
             },
-            "description": "Get detailed status and progress of a localization job. Replace '1' with the actual job ID."
+            "description": "Get detailed status and progress of a localization job. Update the job_id variable with the actual job ID."
           }
         },
         {
@@ -295,11 +310,11 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/localization/jobs/1/translations",
+              "raw": "{{base_url}}/api/localization/jobs/{{job_id}}/translations",
               "host": ["{{base_url}}"],
-              "path": ["api", "localization", "jobs", "1", "translations"]
+              "path": ["api", "localization", "jobs", "{{job_id}}", "translations"]
             },
-            "description": "Get all translations for a specific localization job. Replace '1' with the actual job ID."
+            "description": "Get all translations for a specific localization job. Update the job_id variable with the actual job ID."
           }
         },
         {
@@ -308,11 +323,11 @@
             "method": "DELETE",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/localization/jobs/1",
+              "raw": "{{base_url}}/api/localization/jobs/{{job_id}}",
               "host": ["{{base_url}}"],
-              "path": ["api", "localization", "jobs", "1"]
+              "path": ["api", "localization", "jobs", "{{job_id}}"]
             },
-            "description": "Cancel a running localization job. Replace '1' with the actual job ID."
+            "description": "Cancel a running localization job. Update the job_id variable with the actual job ID."
           }
         }
       ]
@@ -326,9 +341,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/localization/translations/1?include_analysis=false",
+              "raw": "{{base_url}}/api/localization/translations/{{translation_id}}?include_analysis=false",
               "host": ["{{base_url}}"],
-              "path": ["api", "localization", "translations", "1"],
+              "path": ["api", "localization", "translations", "{{translation_id}}"],
               "query": [
                 {
                   "key": "include_analysis",
@@ -337,7 +352,7 @@
                 }
               ]
             },
-            "description": "Get a specific translation result. Replace '1' with the actual translation ID."
+            "description": "Get a specific translation result. Update the translation_id variable with the actual translation ID."
           }
         },
         {
@@ -346,9 +361,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/localization/translations/1?include_analysis=true",
+              "raw": "{{base_url}}/api/localization/translations/{{translation_id}}?include_analysis=true",
               "host": ["{{base_url}}"],
-              "path": ["api", "localization", "translations", "1"],
+              "path": ["api", "localization", "translations", "{{translation_id}}"],
               "query": [
                 {
                   "key": "include_analysis",
@@ -366,11 +381,11 @@
             "method": "POST",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/localization/translations/1/retry",
+              "raw": "{{base_url}}/api/localization/translations/{{translation_id}}/retry",
               "host": ["{{base_url}}"],
-              "path": ["api", "localization", "translations", "1", "retry"]
+              "path": ["api", "localization", "translations", "{{translation_id}}", "retry"]
             },
-            "description": "Retry a failed translation. Replace '1' with the actual translation ID."
+            "description": "Retry a failed translation. Update the translation_id variable with the actual translation ID."
           }
         }
       ]
@@ -384,11 +399,11 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/localization/videos/1/localizations",
+              "raw": "{{base_url}}/api/localization/videos/{{video_id}}/localizations",
               "host": ["{{base_url}}"],
-              "path": ["api", "localization", "videos", "1", "localizations"]
+              "path": ["api", "localization", "videos", "{{video_id}}", "localizations"]
             },
-            "description": "Get all localization results for a specific video. Replace '1' with the actual video ID."
+            "description": "Get all localization results for a specific video. Update the video_id variable with the actual video ID."
           }
         }
       ]
@@ -415,13 +430,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/localization/analytics/summary?video_id=1",
+              "raw": "{{base_url}}/api/localization/analytics/summary?video_id={{video_id}}",
               "host": ["{{base_url}}"],
               "path": ["api", "localization", "analytics", "summary"],
               "query": [
                 {
                   "key": "video_id",
-                  "value": "1",
+                  "value": "{{video_id}}",
                   "description": "Filter by specific video ID"
                 }
               ]
@@ -455,7 +470,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/localization/analytics/summary?date_from=2024-01-01T00:00:00Z&date_to=2024-12-31T23:59:59Z",
+              "raw": "{{base_url}}/api/localization/analytics/summary?date_from=2025-01-01T00:00:00Z&date_to=2025-12-31T23:59:59Z",
               "host": ["{{base_url}}"],
               "path": ["api", "localization", "analytics", "summary"],
               "query": [
@@ -473,6 +488,303 @@
             },
             "description": "Get analytics for a specific date range"
           }
+        }
+      ]
+    },
+    {
+      "name": "Direct Localization",
+      "item": [
+        {
+          "name": "Direct Localize Video",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"video_id\": {{video_id}},\n  \"country_code\": \"US\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/localization/direct",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "direct"]
+            },
+            "description": "Directly localize a video for a specific country without job orchestration. This is a faster, single-shot localization that preserves advertising intent and cultural context."
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔄 Complete Test Workflow",
+      "item": [
+        {
+          "name": "1️⃣ Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "✅ First step: Verify API is running"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('API Health Check', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "2️⃣ Upload Video",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "Select a video file to upload (MP4, AVI, MOV, MKV, WMV)"
+                },
+                {
+                  "key": "description",
+                  "value": "Test video for localization workflow",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/videos/upload",
+              "host": ["{{base_url}}"],
+              "path": ["api", "videos", "upload"]
+            },
+            "description": "📹 Second step: Upload a video and save the video_id for next steps"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Video Upload Success', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const responseJson = pm.response.json();",
+                  "    pm.globals.set('video_id', responseJson.video.id);",
+                  "    console.log('Video ID set to:', responseJson.video.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "3️⃣ Get Available Countries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/countries?group_by_language=true",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "countries"],
+              "query": [
+                {
+                  "key": "group_by_language",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "🌍 Third step: See available countries for localization"
+          }
+        },
+        {
+          "name": "4️⃣ Direct Localization (Quick)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"video_id\": {{video_id}},\n  \"country_code\": \"US\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/localization/direct",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "direct"]
+            },
+            "description": "⚡ Fourth step: Quick direct localization (Alternative to job-based workflow)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Direct Localization Success', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const responseJson = pm.response.json();",
+                  "    pm.globals.set('translation_id', responseJson.translation_id);",
+                  "    console.log('Translation completed for country:', responseJson.target_country);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "5️⃣ Create Localization Job (Advanced)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"video_id\": {{video_id}},\n  \"target_countries\": [\"US\", \"GB\", \"AU\", \"DE\", \"FR\"],\n  \"user_id\": null,\n  \"preferences\": {\n    \"analysis_depth\": \"comprehensive\",\n    \"cultural_sensitivity\": \"high\",\n    \"brand_consistency\": \"strict\",\n    \"preserve_brand_elements\": true,\n    \"adapt_for_culture\": true,\n    \"maintain_video_timing\": true\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/localization/jobs",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "jobs"]
+            },
+            "description": "🏗️ Fifth step: Create advanced multi-country localization job"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Localization Job Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const responseJson = pm.response.json();",
+                  "    pm.globals.set('job_id', responseJson.job_id);",
+                  "    console.log('Job ID set to:', responseJson.job_id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6️⃣ Start Localization Job",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/jobs/{{job_id}}/start",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "jobs", "{{job_id}}", "start"]
+            },
+            "description": "🚀 Sixth step: Start the localization job processing"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Job Started', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    console.log('Localization job started successfully');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "7️⃣ Check Job Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/jobs/{{job_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "jobs", "{{job_id}}"]
+            },
+            "description": "📊 Seventh step: Monitor job progress (run multiple times)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Job Status Retrieved', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const responseJson = pm.response.json();",
+                  "    console.log('Job Status:', responseJson.status);",
+                  "    console.log('Progress:', responseJson.progress_percentage + '%');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "8️⃣ Get Job Translations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/localization/jobs/{{job_id}}/translations",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "jobs", "{{job_id}}", "translations"]
+            },
+            "description": "📋 Eighth step: Get all completed translations for the job"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Translations Retrieved', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const responseJson = pm.response.json();",
+                  "    console.log('Number of translations:', responseJson.translations.length);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
         }
       ]
     }

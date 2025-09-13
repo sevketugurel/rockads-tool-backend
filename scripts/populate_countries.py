@@ -62,6 +62,48 @@ def create_sample_countries():
             "priority": 10
         },
         {
+            "country_code": "TR",
+            "country_name": "Turkey",
+            "language_code": "tr",
+            "language_name": "Turkish",
+            "dialect_info": {
+                "primary_dialect": "Istanbul Turkish",
+                "accent_characteristics": ["clear vowels", "soft g (ğ) elongation"],
+                "common_phrases": {
+                    "how_are_you": "Nasılsın?",
+                    "goodbye": "Görüşürüz",
+                    "thank_you": "Teşekkürler"
+                },
+                "slang_terms": {
+                    "harika": "awesome",
+                    "süper": "great",
+                    "aynen": "exactly/agree"
+                },
+                "formality_level": "balanced",
+                "pronunciation_notes": ["Ü/Ö rounded vowels", "Soft g elongates preceding vowel"]
+            },
+            "cultural_context": {
+                "humor_style": "warm",
+                "communication_style": "relational",
+                "color_preferences": ["turquoise", "red", "gold", "white"],
+                "taboo_topics": ["sensitive politics", "religion debates", "overly direct criticism"],
+                "cultural_values": ["family", "hospitality", "respect", "community"],
+                "marketing_preferences": "benefit + trust, local references, social proof",
+                "call_to_action_style": "clear and friendly",
+                "urgency_indicators": ["son gün", "kaçırma", "hemen başla"],
+                "trust_building_elements": ["yerel referanslar", "garanti", "iade politikası"]
+            },
+            "preferred_voice_gender": "neutral",
+            "speech_rate": 1.0,
+            "speech_pitch": 1.0,
+            "voice_characteristics": ["samimi", "anlaşılır", "doğal"],
+            "timezone": "Europe/Istanbul",
+            "currency": "TRY",
+            "date_format": "DD.MM.YYYY",
+            "number_format": "1.234,56",
+            "priority": 8
+        },
+        {
             "country_code": "GB",
             "country_name": "United Kingdom",
             "language_code": "en",

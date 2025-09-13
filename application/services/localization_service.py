@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from typing import List, Dict, Any, Optional
+import os
 from datetime import datetime, timedelta
 
 from domain.entities.video import Video
@@ -101,7 +102,7 @@ class LocalizationService:
             logger.error(f"Failed to create localization job: {str(e)}")
             raise
 
-    async def process_localization_job(self, job_id: int) -> LocalizationJob:
+    async def process_localization_job(self, job_id: int, direct_mode: bool = True) -> LocalizationJob:
         """
         Process a complete localization job
 
@@ -119,24 +120,38 @@ class LocalizationService:
             logger.info(f"Starting processing of localization job {job_id}")
 
             # Update status to processing
-            job.status = LocalizationJobStatus.TRANSCRIBING
-            await self.localization_job_repository.update(job)
-
-            # Get video and ensure it's transcribed
             video = await self.video_repository.get_by_id(job.video_id)
-            transcription = await self._ensure_transcribed(video)
 
-            if not transcription or transcription.status != "completed":
-                raise Exception("Video transcription failed or incomplete")
-
-            # Update job status
-            job.status = LocalizationJobStatus.TRANSLATING
-            job.transcription_id = transcription.id
+            if direct_mode:
+                job.status = LocalizationJobStatus.TRANSLATING
+                # Ensure a placeholder transcription exists to satisfy DB schema
+                transcription = await self._ensure_pseudo_transcription(video)
+                job.transcription_id = transcription.id
+            else:
+                job.status = LocalizationJobStatus.TRANSCRIBING
+                await self.localization_job_repository.update(job)
+                transcription = await self._ensure_transcribed(video)
+                if not transcription or transcription.status != "completed":
+                    raise Exception("Video transcription failed or incomplete")
+                job.status = LocalizationJobStatus.TRANSLATING
+                job.transcription_id = transcription.id
             await self.localization_job_repository.update(job)
 
             # Process translations for each target country
             translations: List[int] = []
             total_countries = len(job.target_countries or [])
+
+            # If no target countries are configured, treat as a no-op completion
+            # rather than a failure to avoid confusing UX in status checks.
+            if total_countries == 0:
+                job.translation_ids = []
+                job.status = LocalizationJobStatus.COMPLETED
+                job.progress_percentage = 100.0
+                await self.localization_job_repository.update(job)
+                logger.info(
+                    f"Localization job {job_id} completed with no target countries (no-op)"
+                )
+                return job
 
             # Track counts locally to avoid relying on DB columns
             success_count = 0
@@ -155,7 +170,7 @@ class LocalizationService:
 
                     # Create and process translation
                     translation = await self._process_single_translation(
-                        video, transcription, country, job
+                        video, transcription, country, job, direct_mode=direct_mode
                     )
 
                     if translation.status == TranslationStatus.COMPLETED:
@@ -229,6 +244,36 @@ class LocalizationService:
                 translation = await self.translation_repository.get_by_id(translation_id)
                 if translation:
                     country = await self.country_repository.get_by_id(translation.country_id)
+                    # Try to expose downloadable video URL if exists
+                    final_video_url = None
+                    try:
+                        # If path was persisted, use it
+                        if getattr(translation, "final_video_path", None):
+                            from core.config.settings import settings
+                            import os
+                            filename = os.path.basename(translation.final_video_path)
+                            candidate = os.path.join(settings.output_dir, filename)
+                            if os.path.exists(candidate):
+                                final_video_url = f"/api/localization/download/{filename}"
+                        else:
+                            # Fallback: infer by filename pattern <original_stem>_<CC>_*.mp4
+                            video = await self.video_repository.get_by_id(job.video_id)
+                            if video and country and country.country_code:
+                                from core.config.settings import settings
+                                stem = os.path.splitext(video.original_filename)[0]
+                                cc = country.country_code
+                                out_dir = settings.output_dir
+                                if os.path.isdir(out_dir):
+                                    matches = [
+                                        f for f in os.listdir(out_dir)
+                                        if f.startswith(f"{stem}_{cc}_") and f.endswith(".mp4")
+                                    ]
+                                    if matches:
+                                        # pick most recent
+                                        matches.sort(key=lambda f: os.path.getmtime(os.path.join(out_dir, f)), reverse=True)
+                                        final_video_url = f"/api/localization/download/{matches[0]}"
+                    except Exception:
+                        pass
                     if translation.status == TranslationStatus.COMPLETED:
                         success_count += 1
                     elif translation.status == TranslationStatus.FAILED:
@@ -240,7 +285,8 @@ class LocalizationService:
                         "status": translation.status,
                         "confidence": translation.overall_confidence,
                         "cultural_score": translation.cultural_appropriateness_score,
-                        "effectiveness": translation.effectiveness_prediction
+                        "effectiveness": translation.effectiveness_prediction,
+                        "final_video_url": final_video_url
                     })
 
         return {
@@ -309,10 +355,64 @@ class LocalizationService:
         )
 
         updated_translation = await self._process_single_translation(
-            video, transcription, country, job_config
+            video, transcription, country, job_config, direct_mode=True
         )
 
         return updated_translation
+
+    async def direct_localize(
+        self,
+        video_id: int,
+        country_code: str,
+        force_local_tts: bool = False,
+        music_only_background: bool = False
+    ) -> Translation:
+        """Simplified single-shot localization: video -> country-specific translation.
+
+        - No job orchestration
+        - Reuses existing translation record if present
+        - Uses direct video context (no transcription dependency)
+        """
+        # Fetch required entities
+        video = await self.video_repository.get_by_id(video_id)
+        if not video:
+            raise ValueError("Video not found")
+
+        country = await self.country_repository.get_by_country_code(country_code)
+        if not country:
+            raise ValueError("Country not found")
+
+        # Ensure a placeholder transcription (DB schema requires)
+        transcription = await self._ensure_pseudo_transcription(video)
+
+        # Minimal job config for internal API compatibility
+        from domain.entities.localization_job import LocalizationJob, LocalizationJobStatus
+        job_stub = LocalizationJob(
+            video_id=video.id,
+            user_id=None,
+            status=LocalizationJobStatus.TRANSLATING,
+            source_language=video.language or "auto",
+            target_languages=[],
+            target_countries=[country.id],
+            preserve_timing=True,
+            adjust_for_culture=True,
+            voice_tone="professional"
+        )
+
+        # Process the translation directly (video-only context)
+        # Use the standard single-translation pipeline so that the Translation
+        # row is created/updated in the DB and we return a persisted entity with id.
+        translation = await self._process_single_translation(
+            video,
+            transcription,
+            country,
+            job_stub,
+            direct_mode=True,
+            force_local_tts=force_local_tts,
+            music_only_background=music_only_background,
+        )
+
+        return translation
 
     async def _ensure_transcribed(self, video: Video) -> Transcription:
         """Ensure video is transcribed, create transcription if needed"""
@@ -326,12 +426,34 @@ class LocalizationService:
 
         return transcription
 
+    async def _ensure_pseudo_transcription(self, video: Video) -> Transcription:
+        """Ensure there is at least a placeholder transcription row for direct mode."""
+        transcription = await self.transcription_repository.get_by_video_id(video.id)
+        if transcription:
+            return transcription
+
+        from domain.entities.transcription import Transcription, TranscriptionStatus
+        pseudo = Transcription(
+            video_id=video.id,
+            status=TranscriptionStatus.COMPLETED,
+            language_code=video.language or "auto",
+            full_text=None,
+            segments=[],
+            confidence_score=None,
+            processing_time=0.0,
+            model_used="direct-localization",
+            extra_metadata={"note": "placeholder for direct localization"}
+        )
+        return await self.transcription_repository.create(pseudo)
+
     async def _process_single_translation(
         self,
         video: Video,
         transcription: Transcription,
         country: Country,
-        job: LocalizationJob
+        job: LocalizationJob,
+        direct_mode: bool = True,
+        **kwargs
     ) -> Translation:
         """Process translation for a single country"""
         try:
@@ -344,33 +466,52 @@ class LocalizationService:
                 logger.info(f"Translation already exists for video {video.id}, country {country.country_code}")
                 return existing
 
-            # Create new translation record
-            translation = Translation(
-                video_id=video.id,
-                transcription_id=transcription.id,
-                country_id=country.id,
-                source_language=transcription.language_code,
-                target_language=country.language_code,
-                country_code=country.country_code,
-                status=TranslationStatus.PENDING
-            )
+            # Reuse existing record if present; otherwise create
+            if existing:
+                translation = existing
+                translation.status = TranslationStatus.PENDING
+                translation.error_message = None
+                translation.warnings = []
+                await self.translation_repository.update(translation)
+            else:
+                translation = Translation(
+                    video_id=video.id,
+                    transcription_id=transcription.id,
+                    country_id=country.id,
+                    source_language=transcription.language_code,
+                    target_language=country.language_code,
+                    country_code=country.country_code,
+                    status=TranslationStatus.PENDING
+                )
+                translation = await self.translation_repository.create(translation)
 
-            translation = await self.translation_repository.create(translation)
-
-            # Analyze video context
-            video_analysis = await self.translation_service.analyze_video_context(
-                video.file_path,
-                transcription.full_text,
-                country
-            )
-
-            # Perform context-aware translation
-            updated_translation = await self.translation_service.translate_with_context(
-                video.file_path,
-                transcription.full_text,
-                country,
-                video_analysis
-            )
+            if direct_mode:
+                # Direct localization using video-only context
+                try:
+                    updated_translation = await self.translation_service.direct_localize_video(
+                        video.file_path,
+                        country,
+                        **kwargs,
+                    )
+                except TypeError:
+                    # Older implementation without kwargs
+                    updated_translation = await self.translation_service.direct_localize_video(
+                        video.file_path,
+                        country,
+                    )
+            else:
+                # Analyze video context + translate using transcript text
+                video_analysis = await self.translation_service.analyze_video_context(
+                    video.file_path,
+                    transcription.full_text or "",
+                    country
+                )
+                updated_translation = await self.translation_service.translate_with_context(
+                    video.file_path,
+                    transcription.full_text or "",
+                    country,
+                    video_analysis
+                )
 
             # Update translation in database
             updated_translation.id = translation.id

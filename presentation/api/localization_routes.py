@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
+import os
 
 from pydantic import BaseModel, Field
 
@@ -74,6 +76,20 @@ class TranslationResult(BaseModel):
     effectiveness_prediction: Optional[float] = None
     processing_time: Optional[float] = None
     warnings: List[str] = []
+    final_video_url: Optional[str] = None  # URL to download final localized video
+    has_audio_localization: bool = False  # Whether TTS was generated
+    video_duration: Optional[float] = None
+
+
+class DirectLocalizationRequest(BaseModel):
+    """Input for single-shot direct localization"""
+    video_id: int = Field(..., description="ID of the video to localize")
+    country_code: str = Field(..., description="Target country code (e.g., US, GB, AU)")
+    use_local_tts: bool = Field(False, description="Force local OS TTS instead of ElevenLabs")
+    music_only_background: bool = Field(
+        False,
+        description="Try to remove original vocals and keep only background music under the new voice"
+    )
 
 
 # No need for dependency function - we'll create use cases directly in routes
@@ -400,3 +416,76 @@ async def localization_health_check():
             "effectiveness_optimization": "available"
         }
     }
+
+
+@router.post("/direct", response_model=TranslationResult)
+async def direct_localize(
+    request: DirectLocalizationRequest,
+    session: AsyncSession = Depends(get_async_db)
+):
+    """
+    Complete video localization with TTS and final video generation.
+
+    This endpoint performs:
+    1. Video analysis and translation
+    2. Text-to-Speech generation with ElevenLabs
+    3. Audio synchronization with original video
+    4. Final video creation with localized audio
+
+    Returns translation result with download URL for final video.
+    """
+    try:
+        use_cases = get_localization_use_cases(session)
+        result = await use_cases.direct_localize_video(
+            request.video_id,
+            request.country_code,
+            force_local_tts=request.use_local_tts,
+            music_only_background=request.music_only_background
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Direct localization failed: {str(e)}")
+
+
+@router.get("/download/{filename}")
+async def download_localized_video(filename: str):
+    """
+    Download a localized video file
+
+    Args:
+        filename: Name of the localized video file
+
+    Returns:
+        FileResponse with the video file
+    """
+    try:
+        from core.config.settings import settings
+
+        # Construct file path
+        file_path = os.path.join(settings.output_dir, filename)
+
+        # Security check - ensure file is within output directory
+        if not os.path.abspath(file_path).startswith(os.path.abspath(settings.output_dir)):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+
+        # Check if file exists
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="Video file not found")
+
+        # Return the file
+        return FileResponse(
+            path=file_path,
+            filename=filename,
+            media_type="video/mp4",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Cache-Control": "no-cache"
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")

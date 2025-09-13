@@ -12,6 +12,7 @@ class LocalizationJobStatus(str, Enum):
     PROCESSING_VIDEO = "processing_video"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class TargetLanguage(BaseModel):
