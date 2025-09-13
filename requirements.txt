@@ -1,0 +1,15 @@
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pydantic==2.10.2
+pydantic-settings==2.6.1
+python-multipart==0.0.6
+sqlalchemy==2.0.36
+alembic==1.13.1
+python-dotenv==1.0.0
+httpx==0.25.2
+pytest==7.4.3
+pytest-asyncio==0.21.1
+aiosqlite==0.21.0
+greenlet==3.2.4
+# psycopg2-binary==2.9.7  # Python 3.13 uyumluluk sorunu
+# asyncpg==0.28.0         # Python 3.13 uyumluluk sorunu
