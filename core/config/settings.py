@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     # Video processing settings
     temp_dir: str = "temp"
     output_dir: str = "output"
+    knowledge_base_dir: str = "data/cultural_knowledge"
 
     # ElevenLabs settings (for future use)
     elevenlabs_api_key: str = "your-elevenlabs-api-key"

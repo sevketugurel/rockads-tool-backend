@@ -506,7 +506,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"video_id\": {{video_id}},\n  \"country_code\": \"US\"\n}",
+              "raw": "{\n  \"video_id\": {{video_id}},\n  \"country_code\": \"US\",\n  \"music_only_background\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -519,7 +519,61 @@
               "path": ["api", "localization", "direct"]
             },
             "description": "Directly localize a video for a specific country without job orchestration. This is a faster, single-shot localization that preserves advertising intent and cultural context."
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Direct Localization 200', function () { pm.response.to.have.status(200); });",
+                  "const r = pm.response.json();",
+                  "console.log('final_video_url:', r.final_video_url);",
+                  "pm.expect(r).to.have.any.keys('final_video_url','parts');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Cultural Analysis",
+      "item": [
+        {
+          "name": "Analyze Ad Cultural Fit (Gemini + RAG)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"video_id\": {{video_id}},\n  \"country_codes\": [\"US\", \"DE\", \"TR\", \"JP\"]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/localization/analysis",
+              "host": ["{{base_url}}"],
+              "path": ["api", "localization", "analysis"]
+            },
+            "description": "Run cultural analysis for selected countries using Gemini with a lightweight RAG layer. Returns strengths, risks, adaptations, CTA examples, compliance, KPIs per country."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Cultural Analysis 200', function () { pm.response.to.have.status(200); });",
+                  "const r = pm.response.json();",
+                  "pm.expect(r).to.have.property('results');",
+                  "pm.expect(Array.isArray(r.results)).to.be.true;",
+                  "if (r.results.length) { pm.expect(r.results[0]).to.have.property('country_code'); }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
         }
       ]
     },

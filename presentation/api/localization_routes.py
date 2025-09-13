@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from infrastructure.database.connection import get_async_db, AsyncSessionLocal
 from application.use_cases.localization_use_cases import LocalizationUseCases
 from application.services.dependency_injection import get_localization_use_cases
+from application.services.ai.cultural_analysis_service import CulturalAnalysisService
 
 router = APIRouter(prefix="/api/localization", tags=["localization"])
 
@@ -427,6 +428,55 @@ async def localization_health_check():
         }
     }
 
+
+class CulturalAnalysisRequest(BaseModel):
+    """Request for cultural analysis across multiple countries"""
+    video_id: int
+    country_codes: List[str]
+
+
+@router.post("/analysis")
+async def analyze_cultural_fit(
+    req: CulturalAnalysisRequest,
+    session: AsyncSession = Depends(get_async_db)
+):
+    """
+    Run Gemini-powered cultural analysis with a lightweight RAG knowledge base for selected countries.
+
+    Returns structured insights per country: strengths, risks, adaptations, CTA examples, compliance, KPIs.
+    """
+    try:
+        use_cases = get_localization_use_cases(session)
+        # Fetch video and build minimal context using existing services if available
+        video = await use_cases.video_repository.get_by_id(req.video_id)
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+
+        # Use quick video info as context (avoid heavy processing here)
+        video_context = {
+            "duration": video.duration,
+            "language": video.language,
+            "filename": video.original_filename,
+        }
+
+        # Prepare analyzer
+        analyzer = CulturalAnalysisService()
+        results = []
+
+        # Resolve countries
+        for code in req.country_codes:
+            country = await use_cases.country_repository.get_by_country_code(code)
+            if not country:
+                results.append({"country_code": code.upper(), "error": "Country not found"})
+                continue
+            result = await analyzer.analyze_for_country(video=video, country=country, video_context=video_context)
+            results.append(result)
+
+        return {"video_id": req.video_id, "results": results}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cultural analysis failed: {str(e)}")
 
 @router.post("/direct", response_model=TranslationResult)
 async def direct_localize(

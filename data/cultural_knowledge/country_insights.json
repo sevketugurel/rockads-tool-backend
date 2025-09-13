@@ -1,0 +1,31 @@
+[
+  {
+    "country_code": "US",
+    "priority": 10,
+    "topic": "Consumer Trends",
+    "insight": "Performance-driven messaging with clear value, social proof, and convenience resonates. Emphasize time-saving and innovation.",
+    "year": 2025
+  },
+  {
+    "country_code": "DE",
+    "priority": 9,
+    "topic": "Tone & Compliance",
+    "insight": "Precise, reliable tone. Avoid exaggeration. Include environmental and quality certifications where relevant.",
+    "year": 2024
+  },
+  {
+    "country_code": "TR",
+    "priority": 9,
+    "topic": "Motivators",
+    "insight": "Family- and community-oriented benefits, trust-building guarantees, and local references increase persuasion.",
+    "year": 2025
+  },
+  {
+    "country_code": "JP",
+    "priority": 8,
+    "topic": "Style",
+    "insight": "Respectful, detail-oriented messaging. Subtle storytelling, harmony, and product craftsmanship are valued.",
+    "year": 2024
+  }
+]
+
