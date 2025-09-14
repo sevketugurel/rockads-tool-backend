@@ -161,12 +161,21 @@ class LocalizationService:
                 try:
                     logger.info(f"Processing translation {i+1}/{total_countries} for country {country_id}")
 
+                    # Update progress at start of processing
+                    start_progress = (i / total_countries) * 90  # Reserve 10% for final steps
+                    job.progress_percentage = start_progress + 5  # Add 5% for starting this country
+                    await self.localization_job_repository.update(job)
+
                     # Get country details
                     country = await self.country_repository.get_by_id(country_id)
                     if not country:
                         logger.warning(f"Country {country_id} not found, skipping")
                         failure_count += 1
                         continue
+
+                    # Update progress before translation
+                    job.progress_percentage = start_progress + 20  # 20% for country validation
+                    await self.localization_job_repository.update(job)
 
                     # Create and process translation
                     translation = await self._process_single_translation(
@@ -176,11 +185,13 @@ class LocalizationService:
                     if translation.status == TranslationStatus.COMPLETED:
                         translations.append(translation.id)
                         success_count += 1
+                        # Full progress for this country
+                        job.progress_percentage = ((i + 1) / total_countries) * 90
                     else:
                         failure_count += 1
+                        # Partial progress even on failure to avoid hangs
+                        job.progress_percentage = ((i + 1) / total_countries) * 90
 
-                    # Update progress
-                    job.progress_percentage = ((i + 1) / total_countries) * 100
                     await self.localization_job_repository.update(job)
 
                 except Exception as e:
@@ -549,6 +560,8 @@ class LocalizationService:
     ) -> Translation:
         """Process translation for a single country"""
         try:
+            logger.info(f"Starting translation for {country.country_code} - {country.country_name}")
+
             # Check if translation already exists
             existing = await self.translation_repository.get_by_video_and_country(
                 video.id, country.id

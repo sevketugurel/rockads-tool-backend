@@ -284,9 +284,18 @@ class GeminiTranslationService(TranslationService):
             if precomputed_segments is None:
                 # Step 1: Upload and analyze video
                 video_file = genai.upload_file(path=video_path)
-                while video_file.state.name == "PROCESSING":
+
+                # Add timeout protection for video processing
+                max_wait_time = 300  # 5 minutes timeout
+                wait_time = 0
+                while video_file.state.name == "PROCESSING" and wait_time < max_wait_time:
                     await asyncio.sleep(2)
+                    wait_time += 2
                     video_file = genai.get_file(video_file.name)
+
+                if wait_time >= max_wait_time:
+                    raise Exception(f"Video processing timeout after {max_wait_time} seconds")
+
                 if video_file.state.name == "FAILED":
                     raise Exception(f"Video processing failed: {video_file.state}")
 
@@ -343,7 +352,24 @@ class GeminiTranslationService(TranslationService):
             """
 
                 await asyncio.sleep(2)
-                response = self.model.generate_content([video_file, prompt])
+
+                # Add retry logic for Gemini API calls
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        response = self.model.generate_content([video_file, prompt])
+                        if response.text:
+                            break
+                        elif attempt == max_retries - 1:
+                            raise Exception("No response generated from Gemini after retries")
+                        else:
+                            logger.warning(f"Empty response from Gemini, retrying... (attempt {attempt + 1})")
+                            await asyncio.sleep(5 * (attempt + 1))  # Exponential backoff
+                    except Exception as e:
+                        if attempt == max_retries - 1:
+                            raise
+                        logger.warning(f"Gemini API error (attempt {attempt + 1}): {str(e)}")
+                        await asyncio.sleep(5 * (attempt + 1))  # Exponential backoff
 
                 if not response.text:
                     raise Exception("No response generated from Gemini")
@@ -383,6 +409,8 @@ class GeminiTranslationService(TranslationService):
                 return translation
 
             # Step 3: Generate speech with ElevenLabs if available
+            logger.info(f"Step 3: Starting TTS generation for {len(translation.segments or [])} segments")
+
             # TTS generation (with optional force-local fallback)
             if translation.segments:
                 if force_local_tts:
@@ -396,18 +424,23 @@ class GeminiTranslationService(TranslationService):
 
                 if not self.tts_service:
                     try:
+                        logger.info("Initializing fallback Local TTS service...")
                         from application.services.ai.local_tts_service import LocalTTSService
                         self.tts_service = LocalTTSService()
-                    except Exception:
+                        logger.info("Local TTS service initialized successfully")
+                    except Exception as e:
+                        logger.warning(f"Local TTS initialization failed: {e}")
                         self.tts_service = None
 
             if self.tts_service and translation.segments:
                 translation.status = TranslationStatus.GENERATING_AUDIO
+                logger.info(f"TTS Status: GENERATING_AUDIO for {len(translation.segments)} segments")
 
                 # Create unique output directory for this translation
                 import uuid
                 session_id = str(uuid.uuid4())[:8]
                 audio_output_dir = self.video_service.temp_dir / f"audio_{session_id}"
+                logger.info(f"Created audio output directory: {audio_output_dir}")
 
                 logger.info("Generating speech for segments...")
                 audio_segments = await self.tts_service.generate_speech_for_segments(
@@ -416,6 +449,7 @@ class GeminiTranslationService(TranslationService):
                     country_code=target_country.country_code,
                     output_dir=str(audio_output_dir)
                 )
+                logger.info(f"TTS generation completed. Generated {len(audio_segments or [])} audio segments")
 
                 # If preferred backend failed, try local fallback once
                 if not audio_segments:

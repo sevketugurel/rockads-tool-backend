@@ -29,6 +29,16 @@ class VideoUseCases:
         self.transcription_repository = transcription_repository
         self.transcription_service = transcription_service
 
+    def _get_video_duration(self, file_path: str) -> Optional[float]:
+        """Extract video duration using moviepy (runs in thread pool)"""
+        try:
+            from moviepy.editor import VideoFileClip
+            with VideoFileClip(file_path) as video_clip:
+                return video_clip.duration
+        except Exception as e:
+            logger.warning(f"Could not extract duration from {file_path}: {str(e)}")
+            return None
+
     async def upload_video(
         self,
         file_content: bytes,
@@ -74,11 +84,16 @@ class VideoUseCases:
 
         logger.info(f"Video file saved: {file_path}")
 
+        # Extract video duration asynchronously to avoid blocking upload
+        duration = None
         try:
-            # Get video duration using moviepy
-            from moviepy.editor import VideoFileClip
-            with VideoFileClip(str(file_path)) as video_clip:
-                duration = video_clip.duration
+            # Use asyncio to run moviepy in executor to prevent blocking
+            loop = asyncio.get_event_loop()
+            duration = await loop.run_in_executor(
+                None,
+                self._get_video_duration,
+                str(file_path)
+            )
         except Exception as e:
             logger.warning(f"Could not extract video duration: {str(e)}")
             duration = None
