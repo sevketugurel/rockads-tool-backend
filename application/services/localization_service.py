@@ -17,6 +17,9 @@ from domain.repositories.country_repository import CountryRepository
 from domain.repositories.localization_job_repository import LocalizationJobRepository
 
 from application.services.ai.translation_service import TranslationService
+from application.services.audio.audio_separation_service import AudioSeparationService
+from application.services.audio.audio_mixing_service import AudioMixingService, AudioMixConfig
+from application.services.ai.elevenlabs_tts_service import ElevenLabsTTSService
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,15 @@ class LocalizationService:
         self.country_repository = country_repository
         self.localization_job_repository = localization_job_repository
         self.translation_service = translation_service
+
+        # Initialize new audio processing services
+        self.audio_separation_service = AudioSeparationService()
+        self.audio_mixing_service = AudioMixingService()
+        self.elevenlabs_service = None
+        try:
+            self.elevenlabs_service = ElevenLabsTTSService()
+        except Exception as e:
+            logger.warning(f"ElevenLabs service not available: {e}")
 
     async def create_localization_job(
         self,
@@ -378,6 +390,136 @@ class LocalizationService:
 
         return updated_translation
 
+    async def direct_localize_with_audio_separation(
+        self,
+        video_id: int,
+        country_code: str,
+        preserve_background_audio: bool = True,
+        background_volume: float = 0.3,
+        voice_volume: float = 1.0,
+        use_precision_timing: bool = True,
+        audio_quality: str = "high",
+        split_into_parts: Optional[int] = None,
+        max_part_duration: Optional[float] = None
+    ) -> Translation:
+        """
+        Advanced localization with audio source separation and mixing
+
+        Args:
+            video_id: ID of the video to localize
+            country_code: Target country code
+            preserve_background_audio: Whether to preserve background music/ambient sounds
+            background_volume: Volume level for background audio (0.0-1.0)
+            voice_volume: Volume level for new voice (0.0-2.0)
+            use_precision_timing: Use enhanced timing synchronization
+            audio_quality: Audio quality setting ("low", "medium", "high")
+            split_into_parts: Optional number of parts to split video into
+            max_part_duration: Optional maximum duration per part
+
+        Returns:
+            Translation object with enhanced audio processing
+        """
+        try:
+            logger.info(f"Starting advanced localization with audio separation for video {video_id}")
+
+            # Fetch required entities
+            video = await self.video_repository.get_by_id(video_id)
+            if not video:
+                raise ValueError("Video not found")
+
+            country = await self.country_repository.get_by_country_code(country_code)
+            if not country:
+                raise ValueError("Country not found")
+
+            # Ensure a placeholder transcription
+            transcription = await self._ensure_pseudo_transcription(video)
+
+            # Step 1: Extract audio from video if needed
+            video_audio_path = await self._extract_video_audio(video.file_path)
+            if not video_audio_path:
+                raise Exception("Failed to extract audio from video")
+
+            # Step 2: Audio source separation (if preserving background)
+            separated_audio = None
+            if preserve_background_audio:
+                separated_audio = await self.audio_separation_service.separate_audio_sources(
+                    video_audio_path, model_type="2stems"  # vocals + accompaniment
+                )
+
+            # Step 3: Get localized translation with segments
+            base_translation = await self.translation_service.direct_localize_video(
+                video.file_path,
+                country,
+                skip_tts=True  # We'll handle TTS separately
+            )
+
+            if not base_translation.segments:
+                raise Exception("No segments generated for translation")
+
+            # Step 4: Generate localized speech with precision timing
+            voice_segments = []
+            if self.elevenlabs_service and use_precision_timing:
+                voice_segments = await self.elevenlabs_service.generate_speech_for_segments_with_precision(
+                    base_translation.segments,
+                    country.language_code,
+                    country_code,
+                    str(self.audio_mixing_service.temp_dir)
+                )
+            else:
+                # Fallback to standard generation
+                voice_segments = await self._generate_voice_segments_standard(
+                    base_translation.segments, country, country_code
+                )
+
+            # Step 5: Mix audio tracks
+            final_audio_path = await self._create_final_mixed_audio(
+                voice_segments,
+                separated_audio,
+                video_audio_path,
+                base_translation.video_duration,
+                preserve_background_audio,
+                background_volume,
+                voice_volume,
+                audio_quality
+            )
+
+            # Step 6: Create final video with mixed audio
+            final_video_path = await self._create_final_video_with_audio(
+                video.file_path, final_audio_path, video_id, country_code
+            )
+
+            # Update translation record
+            base_translation.final_video_path = final_video_path
+            base_translation.status = "completed"
+            base_translation.country_id = country.id
+
+            # Add processing metadata
+            base_translation.warnings = base_translation.warnings or []
+            base_translation.warnings.append({
+                "audio_processing": {
+                    "background_preserved": preserve_background_audio,
+                    "precision_timing": use_precision_timing,
+                    "voice_segments_count": len(voice_segments),
+                    "audio_quality": audio_quality,
+                    "background_volume": background_volume,
+                    "voice_volume": voice_volume
+                }
+            })
+
+            # Save to database
+            existing = await self.translation_repository.get_by_video_and_country(video.id, country.id)
+            if existing:
+                base_translation.id = existing.id
+                await self.translation_repository.update(base_translation)
+                return await self.translation_repository.get_by_id(existing.id)
+            else:
+                created = await self.translation_repository.create(base_translation)
+                return created
+
+        except Exception as e:
+            logger.error(f"Advanced localization failed: {str(e)}")
+            raise
+
     async def direct_localize(
         self,
         video_id: int,
@@ -633,3 +775,234 @@ class LocalizationService:
                 await self.translation_repository.update(translation)
                 return translation
             raise
+
+    async def _extract_video_audio(self, video_path: str) -> Optional[str]:
+        """Extract audio track from video file"""
+        try:
+            import subprocess
+            import tempfile
+            from pathlib import Path
+
+            # Create temporary audio file
+            temp_dir = Path(self.audio_mixing_service.temp_dir)
+            audio_path = temp_dir / f"extracted_audio_{int(asyncio.get_event_loop().time())}.wav"
+
+            # Extract audio using FFmpeg
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", video_path,
+                "-vn",  # No video
+                "-acodec", "pcm_s16le",  # Uncompressed audio
+                "-ar", "44100",  # Sample rate
+                "-ac", "2",  # Stereo
+                str(audio_path)
+            ]
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+
+            stdout, stderr = await process.communicate()
+
+            if process.returncode == 0 and audio_path.exists():
+                logger.info(f"Extracted audio from video: {audio_path}")
+                return str(audio_path)
+            else:
+                logger.error(f"Audio extraction failed: {stderr.decode()}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Video audio extraction failed: {str(e)}")
+            return None
+
+    async def _generate_voice_segments_standard(
+        self,
+        segments: List,
+        country: Country,
+        country_code: str
+    ) -> List[Dict[str, Any]]:
+        """Generate voice segments using standard TTS services"""
+        try:
+            voice_segments = []
+
+            # Use ElevenLabs if available, otherwise fallback
+            if self.elevenlabs_service:
+                temp_segments = await self.elevenlabs_service.generate_speech_for_segments(
+                    segments,
+                    country.language_code,
+                    country_code,
+                    str(self.audio_mixing_service.temp_dir)
+                )
+                voice_segments.extend(temp_segments)
+
+            return voice_segments
+
+        except Exception as e:
+            logger.error(f"Standard voice generation failed: {str(e)}")
+            return []
+
+    async def _create_final_mixed_audio(
+        self,
+        voice_segments: List[Dict[str, Any]],
+        separated_audio: Optional[Dict[str, str]],
+        original_audio_path: str,
+        total_duration: float,
+        preserve_background: bool,
+        background_volume: float,
+        voice_volume: float,
+        audio_quality: str
+    ) -> Optional[str]:
+        """Create final mixed audio track"""
+        try:
+            # Create mixing configuration
+            config = AudioMixConfig(
+                voice_volume=voice_volume,
+                background_volume=background_volume,
+                normalize_audio=True,
+                output_format="wav" if audio_quality == "high" else "mp3",
+                sample_rate=44100 if audio_quality == "high" else 22050
+            )
+
+            output_path = self.audio_mixing_service.temp_dir / f"final_mixed_{int(asyncio.get_event_loop().time())}.{config.output_format}"
+
+            if preserve_background and separated_audio and "accompaniment" in separated_audio:
+                # Mix with preserved background music
+                result = await self.audio_mixing_service.mix_segmented_voice_with_background(
+                    voice_segments=voice_segments,
+                    background_audio_path=separated_audio["accompaniment"],
+                    output_path=str(output_path),
+                    total_duration=total_duration,
+                    config=config
+                )
+            else:
+                # Mix voice segments only (no background preservation)
+                result = await self.audio_mixing_service.mix_segmented_voice_with_background(
+                    voice_segments=voice_segments,
+                    background_audio_path=original_audio_path,
+                    output_path=str(output_path),
+                    total_duration=total_duration,
+                    config=AudioMixConfig(
+                        voice_volume=voice_volume,
+                        background_volume=0.05,  # Very low background
+                        **config.__dict__
+                    )
+                )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Final audio mixing failed: {str(e)}")
+            return None
+
+    async def _create_final_video_with_audio(
+        self,
+        original_video_path: str,
+        mixed_audio_path: str,
+        video_id: int,
+        country_code: str
+    ) -> Optional[str]:
+        """Create final video with mixed audio track"""
+        try:
+            import subprocess
+            from pathlib import Path
+
+            # Generate output filename
+            video_filename = Path(original_video_path).stem
+            output_filename = f"{video_filename}_{country_code}_enhanced_{int(asyncio.get_event_loop().time())}.mp4"
+            output_path = self.audio_mixing_service.output_dir / output_filename
+
+            # Replace audio in video using FFmpeg
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", original_video_path,  # Video input
+                "-i", mixed_audio_path,     # Audio input
+                "-c:v", "copy",             # Copy video stream
+                "-c:a", "aac",              # Encode audio as AAC
+                "-b:a", "192k",             # Audio bitrate
+                "-map", "0:v:0",            # Map video from first input
+                "-map", "1:a:0",            # Map audio from second input
+                "-shortest",                # End when shortest stream ends
+                str(output_path)
+            ]
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+
+            stdout, stderr = await process.communicate()
+
+            if process.returncode == 0 and output_path.exists():
+                logger.info(f"Created final video with enhanced audio: {output_path}")
+                return str(output_path)
+            else:
+                logger.error(f"Final video creation failed: {stderr.decode()}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Final video creation failed: {str(e)}")
+            return None
+
+    async def analyze_audio_separation_feasibility(self, video_id: int) -> Dict[str, Any]:
+        """
+        Analyze whether a video is suitable for audio separation
+
+        Args:
+            video_id: ID of the video to analyze
+
+        Returns:
+            Analysis results with recommendations
+        """
+        try:
+            video = await self.video_repository.get_by_id(video_id)
+            if not video:
+                return {"error": "Video not found"}
+
+            # Extract audio for analysis
+            audio_path = await self._extract_video_audio(video.file_path)
+            if not audio_path:
+                return {"error": "Could not extract audio for analysis"}
+
+            # Analyze separation feasibility
+            separation_info = await self.audio_separation_service.get_separation_info(audio_path)
+
+            # Add video-specific recommendations
+            recommendations = []
+            if separation_info.get("separation_feasible"):
+                recommendations.append("✓ Audio separation is feasible - stereo audio detected")
+                recommendations.append("✓ Background music preservation recommended")
+
+                if separation_info.get("expected_quality") == "high":
+                    recommendations.append("✓ High-quality separation expected")
+                else:
+                    recommendations.append("⚠ Medium-quality separation expected")
+            else:
+                recommendations.append("⚠ Audio separation may not be effective - mono audio or insufficient channels")
+                recommendations.append("• Consider using standard localization without background preservation")
+
+            # Add duration-based recommendations
+            duration = separation_info.get("duration", 0)
+            if duration > 300:  # 5 minutes
+                recommendations.append("⚠ Long video detected - consider splitting for better performance")
+
+            return {
+                **separation_info,
+                "recommendations": recommendations,
+                "enhanced_localization_recommended": separation_info.get("separation_feasible", False)
+            }
+
+        except Exception as e:
+            logger.error(f"Audio separation analysis failed: {str(e)}")
+            return {"error": str(e)}
+
+    def cleanup_temp_files(self, max_age_hours: int = 24):
+        """Clean up temporary audio processing files"""
+        try:
+            self.audio_separation_service.cleanup_temp_files(max_age_hours)
+            self.audio_mixing_service.cleanup_temp_files(max_age_hours)
+            logger.info("Audio processing temp files cleaned up")
+        except Exception as e:
+            logger.error(f"Temp file cleanup failed: {str(e)}")

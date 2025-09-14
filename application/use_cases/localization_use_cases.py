@@ -637,3 +637,105 @@ class LocalizationUseCases:
         except Exception as e:
             logger.error(f"Direct localization failed: {str(e)}")
             raise
+
+    async def enhanced_localize_video(
+        self,
+        video_id: int,
+        country_code: str,
+        preserve_background_audio: bool = True,
+        background_volume: float = 0.3,
+        voice_volume: float = 1.0,
+        use_precision_timing: bool = True,
+        audio_quality: str = "high",
+        split_into_parts: Optional[int] = None,
+        max_part_duration: Optional[float] = None
+    ) -> Translation:
+        """
+        Perform enhanced video localization with advanced audio processing
+
+        Args:
+            video_id: ID of the video to localize
+            country_code: Target country code
+            preserve_background_audio: Whether to preserve background music/ambient sounds
+            background_volume: Volume level for background audio (0.0-1.0)
+            voice_volume: Volume level for new voice (0.0-2.0)
+            use_precision_timing: Use enhanced timing synchronization
+            audio_quality: Audio quality setting ("low", "medium", "high")
+            split_into_parts: Optional number of parts to split video into
+            max_part_duration: Optional maximum duration per part
+
+        Returns:
+            Translation object with enhanced audio processing
+        """
+        try:
+            logger.info(f"Enhanced localization for video {video_id} to {country_code}")
+
+            translation = await self.localization_service.direct_localize_with_audio_separation(
+                video_id=video_id,
+                country_code=country_code,
+                preserve_background_audio=preserve_background_audio,
+                background_volume=background_volume,
+                voice_volume=voice_volume,
+                use_precision_timing=use_precision_timing,
+                audio_quality=audio_quality,
+                split_into_parts=split_into_parts,
+                max_part_duration=max_part_duration
+            )
+
+            logger.info(f"Enhanced localization completed for video {video_id}")
+            return translation
+
+        except Exception as e:
+            logger.error(f"Enhanced localization failed: {str(e)}")
+            raise
+
+    async def analyze_audio_separation_feasibility(self, video_id: int) -> Dict[str, Any]:
+        """
+        Analyze whether a video is suitable for audio source separation
+
+        Args:
+            video_id: ID of the video to analyze
+
+        Returns:
+            Analysis results with recommendations
+        """
+        try:
+            logger.info(f"Analyzing audio separation feasibility for video {video_id}")
+
+            analysis = await self.localization_service.analyze_audio_separation_feasibility(video_id)
+
+            logger.info(f"Audio separation analysis completed for video {video_id}")
+            return analysis
+
+        except Exception as e:
+            logger.error(f"Audio separation analysis failed: {str(e)}")
+            raise
+
+    async def get_video_info(self, video_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get video information for validation
+
+        Args:
+            video_id: ID of the video
+
+        Returns:
+            Video information or None if not found
+        """
+        try:
+            video = await self.video_repository.get_by_id(video_id)
+            if not video:
+                return None
+
+            return {
+                "id": video.id,
+                "filename": video.filename,
+                "original_filename": video.original_filename,
+                "file_path": video.file_path,
+                "language": video.language,
+                "duration": video.duration,
+                "created_at": video.created_at
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get video info for {video_id}: {str(e)}")
+            return None

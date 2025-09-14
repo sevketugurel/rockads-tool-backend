@@ -1,0 +1,10 @@
+{
+  "best_practices": [
+    "Include 8-15 headlines and 4 descriptions",
+    "Use keywords in headlines",
+    "Add sitelinks/callouts/snippets",
+    "Provide audience signals for PMAX"
+  ],
+  "formats": ["search", "display", "youtube", "pmax"],
+  "cta": ["Learn More", "Buy Now", "Get Offer"]
+}

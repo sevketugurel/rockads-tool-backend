@@ -87,6 +87,47 @@ class TranslationResult(BaseModel):
     parts: Optional[List[Dict[str, Any]]] = None  # Multi-part outputs
 
 
+class EnhancedLocalizationRequest(BaseModel):
+    """Enhanced localization request with audio separation features"""
+    video_id: int = Field(..., description="ID of the video to localize")
+    country_code: str = Field(..., description="Target country code (e.g., US, GB, AU)")
+    preserve_background_audio: bool = Field(
+        True,
+        description="Preserve background music/ambient sounds from original video"
+    )
+    background_volume: float = Field(
+        0.3,
+        ge=0.0,
+        le=1.0,
+        description="Volume level for background audio (0.0-1.0)"
+    )
+    voice_volume: float = Field(
+        1.0,
+        ge=0.0,
+        le=2.0,
+        description="Volume level for localized voice (0.0-2.0)"
+    )
+    use_precision_timing: bool = Field(
+        True,
+        description="Use enhanced timing synchronization for voice"
+    )
+    audio_quality: str = Field(
+        "high",
+        pattern="^(low|medium|high)$",
+        description="Audio quality setting"
+    )
+    split_into_parts: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Split video into multiple parts for processing"
+    )
+    max_part_duration: Optional[float] = Field(
+        None,
+        gt=0.0,
+        description="Maximum duration per part in seconds"
+    )
+
+
 class DirectLocalizationRequest(BaseModel):
     """Input for single-shot direct localization"""
     video_id: int = Field(..., description="ID of the video to localize")
@@ -640,6 +681,158 @@ async def direct_localize(
     except Exception as e:
         logger.error(f"Direct localization processing error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Direct localization failed: {str(e)}")
+
+
+@router.post("/enhanced-localize", response_model=TranslationResult)
+async def enhanced_localize_with_audio_separation(
+    request: EnhancedLocalizationRequest,
+    session: AsyncSession = Depends(get_async_db)
+):
+    """
+    Enhanced localization with advanced audio source separation and mixing.
+
+    This endpoint provides premium audio processing features:
+    - Audio source separation to isolate vocals from background music
+    - Preservation of original background music/ambient sounds
+    - High-precision timing synchronization with ElevenLabs TTS
+    - Professional audio mixing with volume control
+    - Enhanced quality options for commercial use
+
+    Args:
+        request: Enhanced localization configuration
+
+    Returns:
+        Enhanced translation result with preserved audio quality
+    """
+    try:
+        logger.info(f"Enhanced localization request for video {request.video_id} to {request.country_code}")
+
+        # Get localization use cases
+        localization_cases = get_localization_use_cases(session)
+        
+        # Validate video exists
+        video_info = await localization_cases.get_video_info(request.video_id)
+        if not video_info:
+            raise HTTPException(status_code=404, detail="Video not found")
+
+        # Analyze audio separation feasibility first
+        feasibility = await localization_cases.analyze_audio_separation_feasibility(request.video_id)
+
+        if feasibility.get("error"):
+            logger.warning(f"Audio analysis failed: {feasibility['error']}")
+            # Continue with warning but still process
+        elif not feasibility.get("separation_feasible") and request.preserve_background_audio:
+            logger.warning("Audio separation may not be effective for this video")
+
+        # Process enhanced localization
+        translation = await localization_cases.enhanced_localize_video(
+            video_id=request.video_id,
+            country_code=request.country_code,
+            preserve_background_audio=request.preserve_background_audio,
+            background_volume=request.background_volume,
+            voice_volume=request.voice_volume,
+            use_precision_timing=request.use_precision_timing,
+            audio_quality=request.audio_quality,
+            split_into_parts=request.split_into_parts,
+            max_part_duration=request.max_part_duration
+        )
+
+        # Extract processing metadata
+        processing_info = {}
+        if translation.warnings:
+            for warning in translation.warnings:
+                if isinstance(warning, dict) and "audio_processing" in warning:
+                    processing_info = warning["audio_processing"]
+                    break
+
+        # Generate download URL if video was created
+        final_video_url = None
+        if translation.final_video_path and os.path.exists(translation.final_video_path):
+            filename = os.path.basename(translation.final_video_path)
+            final_video_url = f"/api/localization/download/{filename}"
+
+        return TranslationResult(
+            translation_id=translation.id,
+            status=translation.status,
+            target_country={
+                "code": request.country_code,
+                "name": "Enhanced Processing"
+            },
+            translated_text=translation.text_summary or "Enhanced audio localization completed",
+            confidence_score=translation.overall_confidence,
+            cultural_appropriateness=translation.cultural_appropriateness_score,
+            effectiveness_prediction=translation.effectiveness_prediction,
+            processing_time=translation.processing_time,
+            warnings=[
+                f"Enhanced audio processing: {processing_info.get('voice_segments_count', 0)} voice segments",
+                f"Background preserved: {processing_info.get('background_preserved', False)}",
+                f"Audio quality: {processing_info.get('audio_quality', 'standard')}"
+            ],
+            final_video_url=final_video_url,
+            final_video_path=translation.final_video_path,
+            has_audio_localization=True,
+            video_duration=translation.video_duration
+        )
+
+    except ValueError as e:
+        logger.error(f"Enhanced localization validation error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Enhanced localization processing error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Enhanced localization failed: {str(e)}")
+
+
+@router.get("/audio-analysis/{video_id}")
+async def analyze_audio_separation_feasibility(
+    video_id: int,
+    session: AsyncSession = Depends(get_async_db)
+):
+    """
+    Analyze a video's suitability for audio source separation.
+
+    This endpoint helps users determine if enhanced localization with audio separation
+    would be beneficial for their video content.
+
+    Args:
+        video_id: ID of the video to analyze
+
+    Returns:
+        Analysis results with recommendations
+    """
+    try:
+        logger.info(f"Analyzing audio separation feasibility for video {video_id}")
+
+        # Get localization use cases
+        localization_cases = get_localization_use_cases(session)
+        
+        analysis = await localization_cases.analyze_audio_separation_feasibility(video_id)
+
+        if analysis.get("error"):
+            raise HTTPException(status_code=400, detail=analysis["error"])
+
+        return {
+            "video_id": video_id,
+            "separation_feasible": analysis.get("separation_feasible", False),
+            "expected_quality": analysis.get("expected_quality", "unknown"),
+            "audio_info": {
+                "channels": analysis.get("channels", 0),
+                "sample_rate": analysis.get("sample_rate", 0),
+                "duration": analysis.get("duration", 0)
+            },
+            "processing_estimate": {
+                "estimated_time_seconds": analysis.get("estimated_processing_time", 0),
+                "recommended_model": analysis.get("recommended_model")
+            },
+            "recommendations": analysis.get("recommendations", []),
+            "enhanced_localization_recommended": analysis.get("enhanced_localization_recommended", False),
+            "spleeter_available": analysis.get("spleeter_available", False)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Audio analysis error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Audio analysis failed: {str(e)}")
 
 
 @router.get("/download/{filename}")

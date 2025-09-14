@@ -1,0 +1,28 @@
+# Enhanced Audio Processing Dependencies
+# Core audio processing libraries
+librosa>=0.10.0         # Advanced audio analysis and processing
+pydub>=0.25.1          # Simple audio manipulation
+soundfile>=0.12.1      # Audio file I/O
+audioread>=3.0.0       # Multi-format audio file reading
+
+# Scientific computing
+scipy>=1.9.0           # Scientific computing (FFT, signal processing)
+numpy>=1.22.0          # Numerical computing
+scikit-learn>=1.1.0    # Machine learning algorithms
+
+# Audio processing optimization
+numba>=0.56.0          # Just-in-time compilation for performance
+joblib>=1.2.0          # Parallel processing
+
+# Alternative to Spleeter (modern AI audio separation)
+demucs                 # Facebook's state-of-the-art source separation
+torch>=2.0.0           # PyTorch for deep learning models
+torchaudio>=2.0.0      # PyTorch audio processing
+
+# Optional: Open-source alternatives
+# asteroid>=0.6.0       # Another audio source separation toolkit
+# speechbrain>=0.5.0    # Comprehensive speech toolkit
+
+# Development and testing
+pytest>=7.0.0          # Testing framework
+pytest-asyncio>=0.21.0 # Async testing support

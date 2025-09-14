@@ -2,8 +2,11 @@ import os
 import asyncio
 import aiohttp
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
+import subprocess
+import json
+import tempfile
 
 from core.config.settings import settings
 from domain.entities.translation import TranslationSegment
@@ -319,6 +322,224 @@ class ElevenLabsTTSService:
             logger.error(f"Speech generation failed for segment: {str(e)}")
             return None
 
+    async def generate_speech_with_timing_sync(
+        self,
+        text: str,
+        voice_id: str,
+        target_duration: float,
+        output_path: str,
+        max_iterations: int = 3
+    ) -> Optional[Tuple[str, float]]:
+        """
+        Generate speech with precise timing synchronization using iterative adjustment
+
+        Args:
+            text: Text to convert to speech
+            voice_id: ElevenLabs voice ID
+            target_duration: Target duration in seconds
+            output_path: Path for output audio file
+            max_iterations: Maximum timing adjustment iterations
+
+        Returns:
+            Tuple of (audio_file_path, actual_duration) or None if failed
+        """
+        try:
+            logger.info(f"Generating timed speech: target_duration={target_duration}s")
+
+            best_audio_path = None
+            best_duration_diff = float('inf')
+
+            for iteration in range(max_iterations):
+                # Calculate speech settings for this iteration
+                speech_settings = self._calculate_timing_settings(text, target_duration, iteration)
+
+                # Generate speech with current settings
+                temp_output = f"{output_path}.temp_{iteration}"
+                audio_path = await self._generate_segment_speech_with_settings(
+                    text, voice_id, temp_output, speech_settings
+                )
+
+                if not audio_path:
+                    continue
+
+                # Measure actual duration
+                actual_duration = await self._get_audio_duration(audio_path)
+                if actual_duration is None:
+                    continue
+
+                duration_diff = abs(actual_duration - target_duration)
+                logger.debug(f"Iteration {iteration}: target={target_duration}s, actual={actual_duration}s, diff={duration_diff}s")
+
+                # Keep best result
+                if duration_diff < best_duration_diff:
+                    if best_audio_path and os.path.exists(best_audio_path):
+                        os.remove(best_audio_path)
+                    best_audio_path = audio_path
+                    best_duration_diff = duration_diff
+
+                    # Good enough result
+                    if duration_diff < 0.1:  # Within 100ms
+                        break
+                else:
+                    # Remove inferior result
+                    if os.path.exists(audio_path):
+                        os.remove(audio_path)
+
+            # Move best result to final output path
+            if best_audio_path and os.path.exists(best_audio_path):
+                if best_audio_path != output_path:
+                    os.rename(best_audio_path, output_path)
+
+                final_duration = await self._get_audio_duration(output_path)
+                logger.info(f"Timed speech generated: {output_path}, duration={final_duration}s")
+                return (output_path, final_duration or target_duration)
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Timed speech generation failed: {str(e)}")
+            return None
+
+    def _calculate_timing_settings(self, text: str, target_duration: float, iteration: int) -> Dict[str, Any]:
+        """Calculate speech settings to achieve target timing"""
+        try:
+            # Estimate words per minute needed
+            word_count = len(text.split())
+            if target_duration <= 0 or word_count <= 0:
+                return {"speed": 1.0, "stability": 0.5}
+
+            target_wpm = (word_count / target_duration) * 60
+
+            # Base settings
+            base_speed = 1.0
+            base_stability = 0.5
+
+            # Adjust based on target WPM
+            if target_wpm > 200:  # Very fast speech needed
+                speed = min(1.5, 1.0 + (target_wpm - 150) / 200)
+                stability = max(0.2, 0.5 - (target_wpm - 150) / 500)
+            elif target_wpm < 120:  # Slow speech needed
+                speed = max(0.6, 1.0 - (150 - target_wpm) / 200)
+                stability = min(0.8, 0.5 + (150 - target_wpm) / 300)
+            else:  # Normal range
+                speed = base_speed
+                stability = base_stability
+
+            # Apply iteration-based fine-tuning
+            if iteration > 0:
+                adjustment = 0.1 * iteration
+                if iteration % 2 == 1:  # Alternate between faster/slower
+                    speed += adjustment
+                else:
+                    speed -= adjustment
+
+                speed = max(0.5, min(2.0, speed))  # Clamp to valid range
+
+            return {
+                "speed": speed,
+                "stability": stability,
+                "similarity_boost": 0.75,
+                "style": 0.5,
+                "use_speaker_boost": True
+            }
+
+        except Exception:
+            return {"speed": 1.0, "stability": 0.5}
+
+    async def _generate_segment_speech_with_settings(
+        self,
+        text: str,
+        voice_id: str,
+        output_path: str,
+        settings: Dict[str, Any]
+    ) -> Optional[str]:
+        """Generate speech with specific settings"""
+        try:
+            # Try SDK first
+            if self.client is not None:
+                try:
+                    audio_stream = self.client.text_to_speech.convert(
+                        text=text,
+                        voice_id=voice_id,
+                        model_id="eleven_multilingual_v2",
+                        output_format="mp3_44100_128",
+                    )
+
+                    with open(output_path, "wb") as f:
+                        for chunk in audio_stream:
+                            if not chunk:
+                                continue
+                            if isinstance(chunk, bytes):
+                                f.write(chunk)
+                            else:
+                                try:
+                                    f.write(bytes(chunk))
+                                except Exception:
+                                    continue
+
+                    return output_path
+                except Exception as e:
+                    logger.warning(f"SDK generation failed: {e}")
+
+            # HTTP fallback
+            headers = {
+                "Accept": "audio/mpeg",
+                "Content-Type": "application/json",
+                "xi-api-key": self.api_key
+            }
+
+            data = {
+                "text": text,
+                "model_id": "eleven_multilingual_v2",
+                "voice_settings": settings
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.base_url}/text-to-speech/{voice_id}",
+                    json=data,
+                    headers=headers
+                ) as response:
+                    if response.status == 200:
+                        audio_data = await response.read()
+                        with open(output_path, 'wb') as f:
+                            f.write(audio_data)
+                        return output_path
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"TTS API error {response.status}: {error_text}")
+                        return None
+
+        except Exception as e:
+            logger.error(f"Speech generation with settings failed: {str(e)}")
+            return None
+
+    async def _get_audio_duration(self, audio_path: str) -> Optional[float]:
+        """Get the actual duration of an audio file"""
+        try:
+            cmd = [
+                "ffprobe", "-v", "quiet", "-print_format", "json",
+                "-show_entries", "format=duration",
+                audio_path
+            ]
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+
+            stdout, stderr = await process.communicate()
+
+            if process.returncode == 0:
+                probe_data = json.loads(stdout.decode())
+                return float(probe_data.get("format", {}).get("duration", 0))
+
+            return None
+
+        except Exception:
+            return None
+
     async def generate_full_audio_track(
         self,
         audio_segments: List[Dict[str, Any]],
@@ -337,10 +558,6 @@ class ElevenLabsTTSService:
             Path to combined audio file or None if failed
         """
         try:
-            # This requires FFmpeg to be installed
-            import subprocess
-            from tempfile import NamedTemporaryFile
-
             # Create FFmpeg filter complex for precise timing
             filter_parts = []
             input_files = []
@@ -392,3 +609,75 @@ class ElevenLabsTTSService:
         except Exception as e:
             logger.error(f"Audio combination failed: {str(e)}")
             return None
+
+    async def generate_speech_for_segments_with_precision(
+        self,
+        segments: List[TranslationSegment],
+        target_language: str,
+        country_code: str,
+        output_dir: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Generate speech for segments with enhanced timing precision
+
+        Args:
+            segments: List of translation segments
+            target_language: Target language code
+            country_code: Target country code
+            output_dir: Output directory for audio files
+
+        Returns:
+            List of audio segments with enhanced timing information
+        """
+        try:
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+
+            voice_id = await self.select_best_voice(target_language, country_code)
+            logger.info(f"Using voice {voice_id} for precision speech generation")
+
+            audio_segments = []
+
+            for i, segment in enumerate(segments):
+                if not segment.translated_text or not segment.translated_text.strip():
+                    continue
+
+                try:
+                    segment_duration = segment.end_time - segment.start_time
+                    audio_file_path = output_path / f"segment_{i:03d}.mp3"
+
+                    # Generate with timing synchronization
+                    result = await self.generate_speech_with_timing_sync(
+                        text=segment.translated_text,
+                        voice_id=voice_id,
+                        target_duration=segment_duration,
+                        output_path=str(audio_file_path)
+                    )
+
+                    if result:
+                        final_path, actual_duration = result
+                        audio_segments.append({
+                            "segment_index": i,
+                            "start_time": segment.start_time,
+                            "end_time": segment.end_time,
+                            "target_duration": segment_duration,
+                            "actual_duration": actual_duration,
+                            "timing_accuracy": abs(actual_duration - segment_duration),
+                            "audio_file": final_path,
+                            "text": segment.translated_text,
+                            "original_text": segment.original_text
+                        })
+
+                    # Rate limiting
+                    await asyncio.sleep(1)
+
+                except Exception as e:
+                    logger.error(f"Enhanced speech generation failed for segment {i}: {str(e)}")
+                    continue
+
+            logger.info(f"Generated {len(audio_segments)} precision-timed segments")
+            return audio_segments
+
+        except Exception as e:
+            logger.error(f"Precision speech generation failed: {str(e)}")
+            return []

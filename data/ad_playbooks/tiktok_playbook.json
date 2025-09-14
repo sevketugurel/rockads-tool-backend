@@ -1,0 +1,10 @@
+{
+  "best_practices": [
+    "Hook in first 3 seconds",
+    "Native UGC style",
+    "Clear on-screen captions",
+    "Use relevant hashtags"
+  ],
+  "formats": ["short_video"],
+  "cta": ["Learn More", "Shop Now"]
+}

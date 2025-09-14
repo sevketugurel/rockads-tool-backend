@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from infrastructure.database.connection import create_tables
-from presentation.api import user_routes, item_routes, video_routes, localization_routes
+from presentation.api import user_routes, item_routes, video_routes, localization_routes, campaign_routes
 from presentation.middleware.cors import add_cors_middleware
 from core.config.settings import settings
 
@@ -24,6 +24,7 @@ app.include_router(user_routes.router)
 app.include_router(item_routes.router)
 app.include_router(video_routes.router)
 app.include_router(localization_routes.router)
+app.include_router(campaign_routes.router)
 
 
 @app.get("/")

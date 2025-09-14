@@ -1,0 +1,11 @@
+{
+  "best_practices": [
+    "Hook in first 2 seconds",
+    "Use native style creatives",
+    "Clear CTA above the fold",
+    "1:1 and 4:5 aspect ratios",
+    "Avoid sensitive before/after claims"
+  ],
+  "formats": ["single_image", "video", "carousel"],
+  "cta": ["Learn More", "Shop Now", "Sign Up"]
+}
